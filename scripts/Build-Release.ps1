@@ -18,6 +18,7 @@ $package = Join-Path $staging 'RobloxAccountManager'
 $releaseDir = Join-Path $taskRoot 'releases'
 $localDir = Join-Path $taskRoot ('dist\v' + $version)
 $zip = Join-Path $releaseDir ('RobloxAccountManager-' + $version + '-win-x64.zip')
+$bundleProperties = @('-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true')
 function Assert-GeneratedPath([string]$path, [string]$parent) {
     $full = [IO.Path]::GetFullPath($path)
     $prefix = [IO.Path]::GetFullPath($parent).TrimEnd('\') + '\'
@@ -32,21 +33,23 @@ function Get-Digest([string]$path) {
 Assert-GeneratedPath $staging $stagingParent
 New-Item -ItemType Directory -Force -Path $package,$releaseDir | Out-Null
 try {
-    & $sdk restore $project --runtime win-x64 -p:SelfContained=true --configfile (Join-Path $taskRoot 'NuGet.Config') --locked-mode
+    & $sdk restore $project --runtime win-x64 -p:SelfContained=true @bundleProperties --configfile (Join-Path $taskRoot 'NuGet.Config') --locked-mode
     if ($LASTEXITCODE -ne 0) { throw 'Restore failed. Install a .NET 10 SDK and check NuGet connectivity.' }
-    & $sdk publish $project --no-restore -c Release --runtime win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $package
+    & $sdk publish $project --no-restore -c Release --runtime win-x64 --self-contained true @bundleProperties -p:PublishTrimmed=false -p:PublishReferencesDocumentationFiles=false -p:DebugType=None -p:DebugSymbols=false -o $package
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+    $docs = Join-Path $package 'Docs'
+    New-Item -ItemType Directory -Path $docs | Out-Null
     foreach ($name in @('README.md','SECURITY.md','SOURCE_REVIEW.md','BROWSER_CODE.md','LICENSE','NOTICE.md')) {
-        Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination (Join-Path $package $name)
+        Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination (Join-Path $docs $name)
     }
-    New-Item -ItemType Directory -Path (Join-Path $package 'examples') | Out-Null
-    Copy-Item -LiteralPath (Join-Path $taskRoot 'examples\join-group.js') -Destination (Join-Path $package 'examples\join-group.js')
-    Copy-Item -LiteralPath (Join-Path $taskRoot 'src\LocalAccountManager\Assets\AppIcon.png') -Destination (Join-Path $package 'AppIcon.png')
+    New-Item -ItemType Directory -Path (Join-Path $docs 'examples') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'examples\join-group.js') -Destination (Join-Path $docs 'examples\join-group.js')
     @'
 Roblox Account Manager - Portable
 
 Extract this entire folder, then open RobloxAccountManager.exe.
 The .NET runtime is included. Microsoft Edge WebView2 Runtime must be installed.
+Guides, examples and licenses are in Docs. SHA256SUMS.txt lists the file checksums.
 Create or unlock your master-password vault on first launch.
 All account data is created in Data beside the EXE. Copy the ENTIRE folder to your USB.
 Use the same master password on another Windows PC; Roblox may require a fresh login.
@@ -55,13 +58,15 @@ Keep your master password safe. The app cannot recover it.
 This release starts empty. It contains no builder accounts, passwords, cookies or browser profiles.
 Share the original ZIP, not your used folder containing Data.
 '@ | Set-Content -LiteralPath (Join-Path $package 'START-HERE.txt') -Encoding UTF8
-    $notices = Join-Path $package 'ThirdPartyNotices'
+    $notices = Join-Path $docs 'ThirdPartyNotices'
     New-Item -ItemType Directory -Path $notices | Out-Null
     foreach ($name in @('LICENSE.txt','ThirdPartyNotices.txt')) {
         $notice = Join-Path (Split-Path -Parent $sdk) $name
         if (Test-Path -LiteralPath $notice) { Copy-Item -LiteralPath $notice -Destination (Join-Path $notices ('DotNet-' + $name)) }
     }
-    $runtimeConfig = Get-Content -LiteralPath (Join-Path $package 'RobloxAccountManager.runtimeconfig.json') -Raw | ConvertFrom-Json
+    # The published runtime configuration is bundled into the EXE; read the compiler's copy for vendor notices.
+    $runtimeConfigPath = Join-Path (Split-Path -Parent $project) 'bin\Release\net10.0-windows\win-x64\RobloxAccountManager.runtimeconfig.json'
+    $runtimeConfig = Get-Content -LiteralPath $runtimeConfigPath -Raw | ConvertFrom-Json
     foreach ($framework in $runtimeConfig.runtimeOptions.includedFrameworks) {
         $packName = switch ($framework.name) { 'Microsoft.NETCore.App' { 'microsoft.netcore.app.runtime.win-x64' } 'Microsoft.WindowsDesktop.App' { 'microsoft.windowsdesktop.app.runtime.win-x64' } default { $null } }
         if ($packName) {
@@ -74,6 +79,11 @@ Share the original ZIP, not your used folder containing Data.
     foreach ($name in @('LICENSE.txt','NOTICE.txt')) {
         $wvLicense = Join-Path $env:NUGET_PACKAGES ('microsoft.web.webview2\1.0.4314.35\' + $name)
         if (Test-Path -LiteralPath $wvLicense) { Copy-Item -LiteralPath $wvLicense -Destination (Join-Path $notices ('WebView2-' + $name)) }
+    }
+    $rootFiles = @(Get-ChildItem -LiteralPath $package -File | ForEach-Object Name)
+    $rootFolders = @(Get-ChildItem -LiteralPath $package -Directory | ForEach-Object Name)
+    if ($rootFiles.Count -ne 2 -or 'RobloxAccountManager.exe' -notin $rootFiles -or 'START-HERE.txt' -notin $rootFiles -or $rootFolders.Count -ne 1 -or $rootFolders[0] -ne 'Docs') {
+        throw 'Unexpected loose files in the portable release. Only the bundled EXE, start guide, and Docs folder are allowed before checksums.'
     }
     $files = @(Get-ChildItem -LiteralPath $package -File -Recurse)
     foreach ($file in $files) {

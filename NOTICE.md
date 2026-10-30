@@ -14,8 +14,8 @@ The matching application source, build scripts, and original icon assets are ava
 
 ## Third-party components
 
-- **Microsoft .NET / WPF:** distributed under their respective Microsoft/open-source notices. The self-contained release includes the supplied runtime licenses and third-party notices under `ThirdPartyNotices`.
-- **Microsoft.Web.WebView2 SDK:** distributed under Microsoft's included BSD-style license and notices, retained under `ThirdPartyNotices`. The installed WebView2 browser runtime is a separate Microsoft component with its own terms.
+- **Microsoft .NET / WPF:** distributed under their respective Microsoft/open-source notices. The self-contained release includes the supplied runtime licenses and third-party notices under `Docs/ThirdPartyNotices`.
+- **Microsoft.Web.WebView2 SDK:** distributed under Microsoft's included BSD-style license and notices, retained under `Docs/ThirdPartyNotices`. The installed WebView2 browser runtime is a separate Microsoft component with its own terms.
 - **Pillow:** optional development tool for regenerating the project's original icon; it is not bundled into the application.
 
 The application GPL license does not replace third-party component licenses or grant rights to Roblox trademarks. Source, attribution, and license review reduce avoidable problems but do not constitute a legal clearance or a promise that no takedown request can be made.

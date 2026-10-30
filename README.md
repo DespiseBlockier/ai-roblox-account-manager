@@ -6,7 +6,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.3.0/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.3.0-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.3.1/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.3.1-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password** of at least 12 characters. Your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Every launch unlocks this file with the master password. Keep that password safe; the app cannot recover it.
 
@@ -66,14 +66,16 @@ Startup and periodic session checks contact Roblox's identity API using saved co
 
 ## Build and verify
 
-Run **Build.cmd** to create a self-contained Windows x64 app in `dist/v1.3.0` and a shareable ZIP in **releases/RobloxAccountManager-1.3.0-win-x64.zip**. The EXE contains the custom app icon. The script uses `.tools/dotnet` if present, otherwise a .NET 10 SDK on PATH. NuGet is restricted to nuget.org and the direct dependency is locked. Rebuild releases to update the bundled .NET runtime; WebView2 updates independently through Microsoft.
+Run **Build.cmd** to create a self-contained Windows x64 app in `dist/v1.3.1` and a shareable ZIP in **releases/RobloxAccountManager-1.3.1-win-x64.zip**. The EXE bundles the app and .NET runtime and contains the custom app icon. The extracted folder contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (guides, examples, and licenses). `Data` is created beside the EXE when you use the app. Native runtime libraries use the standard per-user .NET temporary cache; your account data stays in the portable Data folder. The script uses `.tools/dotnet` if present, otherwise a .NET 10 SDK on PATH. NuGet is restricted to nuget.org and the direct dependency is locked. Rebuild releases to update the bundled .NET runtime; WebView2 updates independently through Microsoft.
 
-**The build does not copy your accounts.** It publishes into a fresh GUID staging directory, copies only named public docs/assets, rejects vault/profile/development files, and archives that fresh output. It never reads the active vault or old local account storage. Existing `dist/v1.3.0/Data` is preserved when app files are updated, and is never included in the ZIP. Share the generated ZIP, not a used application folder. `tests/PackageChecks.py` verifies the ZIP's checksums, runtime, icon resources, and absence of private data.
+**The build does not copy your accounts.** It publishes into a fresh GUID staging directory, copies only named public docs/assets, rejects vault/profile/development files, and archives that fresh output. It never reads the active vault or old local account storage. Existing `dist/v1.3.1/Data` is preserved when app files are updated, and is never included in the ZIP. Share the generated ZIP, not a used application folder. `tests/PackageChecks.py` verifies the ZIP's checksums, runtime, icon resources, and absence of private data.
 
 Run **Check.cmd** for the security and WPF/WebView2 integration checks in a normal Windows session. Tests use synthetic passwords/cookies, a fake HTTP handler, and locally intercepted login-page HTML. They never sign in to a real Roblox account. Test windows can appear briefly; fake test data stays under `test-results`.
 
-Verification passed **148 security checks and 41 UI/WebView2 checks**, plus the archive checks, covering grouped import, quoted passwords, bulk preview/rollback, portable-vault copying and unlock, legacy conversion, export redaction, first-run password confirmation, the embedded icon, and existing login/browser/code behavior. Tests use fake credentials and intercepted responses; live Roblox login, group joining, game joining, and multi-instance behavior still need live account testing. Native API failures are sanitized; script messages are shown locally without log files.
+Verification passed **148 security checks and 41 UI/WebView2 checks**, plus the archive checks (including the single-file bundle and clean folder layout), covering grouped import, quoted passwords, bulk preview/rollback, portable-vault copying and unlock, legacy conversion, export redaction, first-run password confirmation, the embedded icon, and existing login/browser/code behavior. Tests use fake credentials and intercepted responses; live Roblox login, group joining, game joining, and multi-instance behavior still need live account testing. Native API failures are sanitized; script messages are shown locally without log files.
 
-For an isolated preview, run `dist\v1.3.0\RobloxAccountManager.exe --data-dir D:\path\to\empty-preview-folder`. Normal startup needs no arguments. Only one manager instance may use a given data directory.
+For an isolated preview, run `dist\v1.3.1\RobloxAccountManager.exe --data-dir D:\path\to\empty-preview-folder`. Normal startup needs no arguments. Only one manager instance may use a given data directory.
+
+To upgrade a used portable folder, close the app and replace the EXE, text files, and Docs with those from the new ZIP, keeping your existing Data folder. Do not share that used folder.
 
 The application source is in `src/LocalAccountManager`; tests are in `tests`. Build output and the development SDK are excluded from source control. No publishing, installer, scheduled task, startup registration, antivirus exclusion, or automatic app update is performed.

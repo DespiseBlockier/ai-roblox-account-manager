@@ -68,6 +68,6 @@
         </Border>
       </StackPanel></ScrollViewer>
     </Grid>
-    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.3  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
+    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.3.1  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
   </Grid>
 </Window>
