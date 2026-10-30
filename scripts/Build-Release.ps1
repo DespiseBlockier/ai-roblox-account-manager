@@ -39,7 +39,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
     $docs = Join-Path $package 'Docs'
     New-Item -ItemType Directory -Path $docs | Out-Null
-    foreach ($name in @('README.md','SECURITY.md','SOURCE_REVIEW.md','BROWSER_CODE.md','LICENSE','NOTICE.md')) {
+    foreach ($name in @('README.md','LICENSE','NOTICE.md')) {
         Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination (Join-Path $docs $name)
     }
     New-Item -ItemType Directory -Path (Join-Path $docs 'examples') | Out-Null
@@ -50,13 +50,16 @@ Roblox Account Manager - Portable
 Extract this entire folder, then open RobloxAccountManager.exe.
 The .NET runtime is included. Microsoft Edge WebView2 Runtime must be installed.
 Guides, examples and licenses are in Docs. SHA256SUMS.txt lists the file checksums.
-Create or unlock your master-password vault on first launch.
+Create or unlock your vault on first launch. A master password is recommended.
+No master password (Not recommended) stores passwords and cookies in readable form.
+Anyone with an unprotected Data folder can access the saved accounts.
 All account data is created in Data beside the EXE. Copy the ENTIRE folder to your USB.
-Use the same master password on another Windows PC; Roblox may require a fresh login.
+Protected vaults use the same master password on another Windows PC; Roblox may require a fresh login.
 Keep your master password safe. The app cannot recover it.
 
 This release starts empty. It contains no builder accounts, passwords, cookies or browser profiles.
 Share the original ZIP, not your used folder containing Data.
+Use Check for updates, then Update & restart to install a verified release.
 '@ | Set-Content -LiteralPath (Join-Path $package 'START-HERE.txt') -Encoding UTF8
     $notices = Join-Path $docs 'ThirdPartyNotices'
     New-Item -ItemType Directory -Path $notices | Out-Null
@@ -106,6 +109,12 @@ Share the original ZIP, not your used folder containing Data.
         Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
     }
     ((Get-Digest $zip) + '  ' + (Split-Path -Leaf $zip)) | Set-Content -LiteralPath ($zip + '.sha256') -Encoding UTF8
+    $signingKey = Join-Path $taskRoot '.tools\signing\publisher.dpapi'
+    if (Test-Path -LiteralPath $signingKey) {
+        & $sdk run --project (Join-Path $taskRoot 'scripts\ReleaseSigner\ReleaseSigner.csproj') -c Release -- sign $signingKey $zip (Join-Path $releaseDir 'update-manifest.json') (Join-Path $releaseDir 'update-manifest.sig') $version
+        if ($LASTEXITCODE -ne 0) { throw 'Release manifest signing failed.' }
+    }
+    else { Write-Output 'Local build is unsigned. The official updater accepts only publisher-signed releases.' }
     Write-Output "Shareable ZIP: $zip"
     Write-Output 'Account data was excluded. Open Start.cmd to launch the local portable app.'
 }

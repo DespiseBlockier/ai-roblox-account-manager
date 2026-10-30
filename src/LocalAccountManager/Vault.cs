@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -11,16 +10,20 @@ public sealed class Vault : IDisposable
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("LocalAccountManager.Metadata.v1");
     private static readonly byte[] BackupMagic = Encoding.ASCII.GetBytes("RAMLAY01");
     private static readonly byte[] PortableMagic = Encoding.ASCII.GetBytes("RAMPV003");
+    private static readonly byte[] UnprotectedMagic = Encoding.ASCII.GetBytes("RAMNP004");
     private byte[]? masterKey;
     private byte[]? vaultSalt;
+    private bool unprotected;
     private const int MaxBytes = 8 * 1024 * 1024;
     private const int Iterations = 600_000;
     public string Root { get; }
     public string FilePath => Path.Combine(Root, "accounts.vault");
     public string BrowserRoot => Path.Combine(Root, "BrowserData", DeviceCacheKey);
-    public bool IsUnlocked => masterKey is not null;
+    public bool IsUnlocked => masterKey is not null || unprotected;
     public bool Exists => File.Exists(FilePath);
-    public bool IsPortable => Exists && HasPortableHeader(ReadBounded(FilePath));
+    public bool IsPortable => Exists && (HasPortableHeader(ReadBounded(FilePath)) || IsPasswordless);
+    public bool IsPasswordless => Exists && HasUnprotectedHeader(ReadBounded(FilePath));
+    public bool UsesMasterPassword => !unprotected;
     public static string DefaultRoot(string applicationFolder) => Path.GetFullPath(Path.Combine(applicationFolder, "Data"));
     private static readonly Lazy<string> DeviceKey = new(() =>
     {
@@ -36,6 +39,7 @@ public sealed class Vault : IDisposable
         if (password.Length is < 12 or > 1024) throw new UserError("Use a master password of 12–1024 characters.");
         Dispose();
         byte[]? data = Exists ? ReadBounded(FilePath) : null;
+        if (data is not null && HasUnprotectedHeader(data)) throw new UserError("This vault has no master password. Reopen the manager to load it.");
         bool portable = data is not null && HasPortableHeader(data);
         if (data is not null && !portable && !convertLegacy) throw new UserError("This vault uses the old Windows-bound format. Choose conversion on its original PC.");
         byte[] salt = portable ? data!.AsSpan(8, 16).ToArray() : RandomNumberGenerator.GetBytes(16);
@@ -60,6 +64,11 @@ public sealed class Vault : IDisposable
         RequireUnlocked();
         if (!File.Exists(FilePath)) return new();
         byte[] data = ReadBounded(FilePath);
+        if (unprotected)
+        {
+            if (!HasUnprotectedHeader(data)) throw new UserError("The vault protection changed. Reopen the manager.");
+            return Deserialize(data[8..]);
+        }
         if (!HasPortableHeader(data) || !data.AsSpan(8, 16).SequenceEqual(vaultSalt)) throw new UserError("The vault format or encryption salt changed. Reopen the manager to unlock it again.");
         byte[] clear = OpenPortable(data, masterKey!);
         try { return Deserialize(clear); }
@@ -75,12 +84,68 @@ public sealed class Vault : IDisposable
         try
         {
             if (clear.Length > MaxBytes) throw new UserError("The account database is too large.");
-            byte[] nonce = RandomNumberGenerator.GetBytes(12), tag = new byte[16], encrypted = new byte[clear.Length];
-            using var aes = new AesGcm(masterKey!, 16);
-            aes.Encrypt(nonce, clear, encrypted, tag, PortableMagic);
-            WriteAtomic(FilePath, [.. PortableMagic, .. vaultSalt!, .. nonce, .. tag, .. encrypted], FilePath + ".previous");
+            byte[] stored = Encode(clear, masterKey, vaultSalt);
+            try { WriteAtomic(FilePath, stored, FilePath + ".previous"); }
+            finally { CryptographicOperations.ZeroMemory(stored); }
         }
         finally { CryptographicOperations.ZeroMemory(clear); }
+    }
+
+    public AppState UnlockWithoutPassword(bool convertLegacy = false)
+    {
+        Dispose();
+        byte[]? data = Exists ? ReadBounded(FilePath) : null;
+        try
+        {
+            if (data is not null && HasPortableHeader(data)) throw new UserError("Enter the current master password before removing protection.");
+            AppState state = data is null ? new AppState() : HasUnprotectedHeader(data) ? Deserialize(data[8..]) :
+                convertLegacy ? ReadLegacyWindows(FilePath) : throw new UserError("Choose explicit conversion for this older vault.");
+            unprotected = true;
+            return state;
+        }
+        finally { if (data is not null) CryptographicOperations.ZeroMemory(data); }
+    }
+
+    public void ChangeProtection(AppState state, string? newPassword, string currentPassword = "")
+    {
+        RequireUnlocked();
+        if (newPassword is not null && newPassword.Length is < 12 or > 1024) throw new UserError("Use a master password of 12–1024 characters.");
+        Validate(state);
+        if (!unprotected)
+        {
+            byte[] data = ReadBounded(FilePath);
+            if (!HasPortableHeader(data) || !data.AsSpan(8, 16).SequenceEqual(vaultSalt)) throw new UserError("The vault changed. Reopen it before changing protection.");
+            byte[] checkKey = Rfc2898DeriveBytes.Pbkdf2(currentPassword, data.AsSpan(8, 16), Iterations, HashAlgorithmName.SHA256, 32);
+            try { byte[] clearCheck = OpenPortable(data, checkKey); CryptographicOperations.ZeroMemory(clearCheck); }
+            finally { CryptographicOperations.ZeroMemory(checkKey); }
+        }
+        byte[]? salt = newPassword is null ? null : RandomNumberGenerator.GetBytes(16);
+        byte[]? nextKey = newPassword is null ? null : Rfc2898DeriveBytes.Pbkdf2(newPassword, salt!, Iterations, HashAlgorithmName.SHA256, 32);
+        byte[] clear = JsonSerializer.SerializeToUtf8Bytes(state);
+        try
+        {
+            if (clear.Length > MaxBytes) throw new UserError("The account database is too large.");
+            byte[] stored = Encode(clear, nextKey, salt);
+            try
+            {
+                // Replace the known previous save first, so enabling protection never leaves that copy in plaintext.
+                // If the second atomic write fails, the original current vault remains usable with its old protection.
+                if (newPassword is null) WriteAtomic(FilePath, stored, FilePath + ".previous");
+                else { WriteAtomic(FilePath + ".previous", stored); WriteAtomic(FilePath, stored); }
+            }
+            finally { CryptographicOperations.ZeroMemory(stored); }
+            Dispose(); masterKey = nextKey; nextKey = null; vaultSalt = salt; unprotected = newPassword is null;
+        }
+        finally { CryptographicOperations.ZeroMemory(clear); if (nextKey is not null) CryptographicOperations.ZeroMemory(nextKey); }
+    }
+
+    private static byte[] Encode(byte[] clear, byte[]? key, byte[]? salt)
+    {
+        if (key is null) return [.. UnprotectedMagic, .. clear];
+        byte[] nonce = RandomNumberGenerator.GetBytes(12), tag = new byte[16], encrypted = new byte[clear.Length];
+        using var aes = new AesGcm(key, 16);
+        aes.Encrypt(nonce, clear, encrypted, tag, PortableMagic);
+        return [.. PortableMagic, .. salt!, .. nonce, .. tag, .. encrypted];
     }
 
     public static AppState ReadLegacyWindows(string file)
@@ -90,6 +155,7 @@ public sealed class Vault : IDisposable
     }
 
     private static bool HasPortableHeader(byte[] data) => data.Length >= 53 && data.AsSpan(0, 8).SequenceEqual(PortableMagic);
+    private static bool HasUnprotectedHeader(byte[] data) => data.Length > 8 && data.AsSpan(0, 8).SequenceEqual(UnprotectedMagic);
     private static byte[] OpenPortable(byte[] data, byte[] key)
     {
         if (!HasPortableHeader(data)) throw new UserError("The portable vault header is invalid. The file has been preserved.");
@@ -97,8 +163,8 @@ public sealed class Vault : IDisposable
         try { using var aes = new AesGcm(key, 16); aes.Decrypt(data.AsSpan(24, 12), data.AsSpan(52), data.AsSpan(36, 16), clear, PortableMagic); return clear; }
         catch { CryptographicOperations.ZeroMemory(clear); throw; }
     }
-    private void RequireUnlocked() { if (!IsUnlocked) throw new UserError("Unlock the portable vault with its master password first."); }
-    public void Dispose() { if (masterKey is not null) CryptographicOperations.ZeroMemory(masterKey); masterKey = null; vaultSalt = null; }
+    private void RequireUnlocked() { if (!IsUnlocked) throw new UserError("Open the portable vault first."); }
+    public void Dispose() { if (masterKey is not null) CryptographicOperations.ZeroMemory(masterKey); masterKey = null; vaultSalt = null; unprotected = false; }
 
     public static void ExportLayout(string file, AppState state, string password)
     {
@@ -200,45 +266,5 @@ public sealed class Vault : IDisposable
             File.Move(temp, file, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
-    }
-}
-
-// Native Windows DPAPI, scoped to the signed-in user. No third-party crypto library.
-internal static class Dpapi
-{
-    [StructLayout(LayoutKind.Sequential)] private struct Blob { public int Size; public IntPtr Data; }
-    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool CryptProtectData(ref Blob input, string? description, ref Blob entropy, IntPtr reserved, IntPtr prompt, int flags, out Blob output);
-    [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern bool CryptUnprotectData(ref Blob input, IntPtr description, ref Blob entropy, IntPtr reserved, IntPtr prompt, int flags, out Blob output);
-    [DllImport("kernel32.dll")] private static extern IntPtr LocalFree(IntPtr ptr);
-    public static byte[] Protect(byte[] data, byte[] entropy) => Transform(data, entropy, true);
-    public static byte[] Unprotect(byte[] data, byte[] entropy) => Transform(data, entropy, false);
-    private static byte[] Transform(byte[] data, byte[] entropy, bool protect)
-    {
-        var dataPin = GCHandle.Alloc(data, GCHandleType.Pinned);
-        var entropyPin = GCHandle.Alloc(entropy, GCHandleType.Pinned);
-        Blob output = default;
-        try
-        {
-            var input = new Blob { Size = data.Length, Data = dataPin.AddrOfPinnedObject() };
-            var extra = new Blob { Size = entropy.Length, Data = entropyPin.AddrOfPinnedObject() };
-            bool ok = protect ? CryptProtectData(ref input, null, ref extra, IntPtr.Zero, IntPtr.Zero, 1, out output) :
-                CryptUnprotectData(ref input, IntPtr.Zero, ref extra, IntPtr.Zero, IntPtr.Zero, 1, out output);
-            if (!ok) throw new CryptographicException(Marshal.GetLastWin32Error());
-            byte[] result = new byte[output.Size];
-            Marshal.Copy(output.Data, result, 0, result.Length);
-            return result;
-        }
-        finally
-        {
-            if (output.Data != IntPtr.Zero)
-            {
-                // DPAPI's decrypt output is unmanaged plaintext; clear it before release.
-                for (int i = 0; i < output.Size; i++) Marshal.WriteByte(output.Data, i, 0);
-                LocalFree(output.Data);
-            }
-            dataPin.Free(); entropyPin.Free();
-        }
     }
 }

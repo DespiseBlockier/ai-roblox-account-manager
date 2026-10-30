@@ -23,8 +23,12 @@ public partial class MainWindow : Window
     private Mutex? multi;
     private bool busy;
     private bool refreshing;
+    private readonly UpdateClient updates = new();
+    private readonly CancellationTokenSource updateCancel = new();
+    private SignedUpdate? availableUpdate;
+    private bool checkingUpdates;
 
-    public MainWindow(Vault vault, AppState state, RobloxApi? api = null, bool monitorSessions = true)
+    public MainWindow(Vault vault, AppState state, RobloxApi? api = null, bool monitorSessions = true, bool checkUpdates = true)
     {
         this.vault = vault; this.state = state; this.api = api ?? new RobloxApi();
         int removed = AccountEnrollment.RemoveLegacyPlaceholders(state);
@@ -33,6 +37,13 @@ public partial class MainWindow : Window
         browsers = new BrowserHub(vault, this.api, Connected);
         InitializeComponent();
         Refresh();
+        UpdateProtectionLabel();
+        if (checkUpdates) Loaded += async (_, _) =>
+        {
+            if (System.IO.File.Exists(System.IO.Path.Combine(AppContext.BaseDirectory, ".updates", "last-error.txt")))
+                UpdateStatus.Text = "Last update failed. Keep .updates for recovery; Data was preserved.";
+            else await CheckUpdatesAsync();
+        };
         if (removed > 0) Status.Text = $"Cleared {removed} unfinished login placeholder(s).";
         if (monitorSessions)
         {
@@ -43,7 +54,58 @@ public partial class MainWindow : Window
         {
             if (busy) { e.Cancel = true; Status.Text = "Wait for the current operation to finish before closing."; }
         };
-        Closed += (_, _) => { closing = true; sessionTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); DisableMulti(); this.api.Dispose(); };
+        Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); DisableMulti(); this.api.Dispose(); };
+    }
+
+    private void UpdateProtectionLabel()
+    {
+        ProtectionStatus.Text = vault.UsesMasterPassword ? "●  Master password protection · Portable" : "⚠  No master password · Not recommended";
+        ProtectionStatus.Foreground = vault.UsesMasterPassword ? (System.Windows.Media.Brush)FindResource("Muted") : System.Windows.Media.Brushes.Salmon;
+    }
+    private async void VaultSecurity_Click(object sender, RoutedEventArgs e) => await Run(() =>
+    {
+        var dialog = new UnlockVaultWindow(vault, existingState: state) { Owner = this };
+        if (dialog.ShowDialog() == true) { UpdateProtectionLabel(); Status.Text = vault.UsesMasterPassword ? "Master password protection enabled." : "No master password (Not recommended). Anyone with the folder can read saved credentials."; }
+        return Task.CompletedTask;
+    });
+    private async Task CheckUpdatesAsync()
+    {
+        if (checkingUpdates || closing) return;
+        checkingUpdates = true; UpdateButton.IsEnabled = false; UpdateStatus.Text = "Checking GitHub…"; UpdateStatus.ToolTip = null;
+        try
+        {
+            availableUpdate = await updates.CheckAsync(UpdateTrust.CurrentVersion, updateCancel.Token);
+            if (closing) return;
+            UpdateStatus.Text = availableUpdate is null ? "You're up to date." : $"Version {availableUpdate.Manifest.Version} available. Data stays in place.";
+            UpdateButton.Content = availableUpdate is null ? "Check for updates" : "Update & restart";
+        }
+        catch (Exception ex)
+        {
+            if (!closing) { UpdateStatus.Text = "Update check unavailable. Try again."; UpdateStatus.ToolTip = ex is UserError ? ex.Message : "Check your internet connection, then retry."; }
+        }
+        finally { checkingUpdates = false; if (!closing) UpdateButton.IsEnabled = true; }
+    }
+    private async void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (availableUpdate is null) { await CheckUpdatesAsync(); return; }
+        await Run(async () =>
+        {
+            if (addition is { IsCompleted: false } || enrollment.Current is not null) throw new UserError("Finish or close the current sign-in queue before updating.");
+            UpdateButton.IsEnabled = false;
+            try
+            {
+                vault.Save(state);
+                UpdateStatus.Text = "Downloading verified update…";
+                var progress = new Progress<double>(value => { if (!closing) UpdateStatus.Text = $"Downloading update… {value:P0}"; });
+                string folder = await updates.PrepareAsync(availableUpdate, AppContext.BaseDirectory, progress, updateCancel.Token);
+                UpdateStatus.Text = "Preparing update and restart…";
+                using var helper = await UpdateInstaller.StartHelperAsync(AppContext.BaseDirectory, folder, vault.Root);
+                busy = false;
+                try { Close(); }
+                finally { if (!closing && !helper.HasExited) helper.Kill(); }
+            }
+            finally { if (!closing) UpdateButton.IsEnabled = true; }
+        });
     }
 
     private Task Connected(Account account, RobloxIdentity identity, string cookie, bool fromLogin)
@@ -367,7 +429,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.3.1\n\n• Single and bulk sign-in queues\n• Portable master-password encryption for accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• No automatic updater, remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md, README.md and SECURITY.md in the Docs folder for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.4.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

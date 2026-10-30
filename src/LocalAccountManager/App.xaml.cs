@@ -9,9 +9,15 @@ public partial class App : Application
 {
     private Mutex? instance;
     private Vault? vault;
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.FirstOrDefault() == "--apply-update")
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Shutdown(await UpdateInstaller.RunHelperAsync(e.Args)); return;
+        }
+        UpdateInstaller.CleanupCompleted(AppContext.BaseDirectory);
         string root = Vault.DefaultRoot(AppContext.BaseDirectory);
         // This explicit option permits isolated, credential-free UI and storage tests.
         if (e.Args.Length == 2 && e.Args[0] == "--data-dir") root = Path.GetFullPath(e.Args[1]);
@@ -23,9 +29,15 @@ public partial class App : Application
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             vault = new Vault(root);
             string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalRobloxAccountManager", "accounts.vault");
-            var unlock = new UnlockVaultWindow(vault, legacy);
-            if (unlock.ShowDialog() != true || unlock.State is null) { Shutdown(); return; }
-            var window = new MainWindow(vault, unlock.State);
+            AppState state;
+            if (vault.IsPasswordless) state = vault.UnlockWithoutPassword();
+            else
+            {
+                var unlock = new UnlockVaultWindow(vault, legacy);
+                if (unlock.ShowDialog() != true || unlock.State is null) { Shutdown(); return; }
+                state = unlock.State;
+            }
+            var window = new MainWindow(vault, state);
             MainWindow = window;
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             window.Show();

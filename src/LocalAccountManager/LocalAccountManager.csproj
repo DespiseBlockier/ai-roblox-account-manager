@@ -10,7 +10,7 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.3.1</Version>
+    <Version>1.4.0</Version>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishSingleFile>true</PublishSingleFile>
@@ -22,6 +22,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <EmbeddedResource Include="../../examples/join-group.js" LogicalName="LocalAccountManager.JoinGroup.js" />
+    <EmbeddedResource Include="Assets/UpdatePublicKey.bin" LogicalName="LocalAccountManager.UpdatePublicKey" />
     <Resource Include="Assets/AppIcon.ico" />
   </ItemGroup>
 </Project>

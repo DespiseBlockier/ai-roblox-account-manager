@@ -8,7 +8,7 @@ This distribution is provided under **GNU GPL version 3 only (GPL-3.0-only)**; s
 
 The application was written for this project after examining the workflow and security-sensitive features of [ic3w0lf22/Roblox-Account-Manager](https://github.com/ic3w0lf22/Roblox-Account-Manager), reference commit `c2b13d146d5db609d499870145e8d2dff2506581`. That reference project is GPL-3.0 licensed and identifies its author as ic3w0lf/ic3, including the notice "Copyright © ic3 2023" in its assembly metadata. Its authors retain their rights. No original release binaries or original branding assets are redistributed here.
 
-GPL-3.0 was chosen for this distribution to align with the reference project's license rather than rely on a permissive-license characterization of source-informed work. This notice does not claim authorship of any upstream material. See SOURCE_REVIEW.md for the scope of the reference inspection.
+GPL-3.0 was chosen for this distribution to align with the reference project's license rather than rely on a permissive-license characterization of source-informed work. This notice does not claim authorship of any upstream material. The reference inspection focused on account/session, launch, storage, updater, network-control, browser, and main UI workflows; it was not a forensic audit of all released binaries.
 
 The matching application source, build scripts, and original icon assets are available at the release tag and in the source ZIP attached beside the binary release. Recipients of the application must also receive the applicable notices and access to corresponding source under the GPL. Private hosting does not waive license obligations or guarantee protection against copyright or trademark claims.
 

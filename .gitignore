@@ -40,3 +40,13 @@ cookies*.txt
 .vs/
 .idea/
 __pycache__/
+
+# Development-only notes and local checks are retained locally, not published.
+*.md
+!README.md
+!NOTICE.md
+tests/
+Check.cmd
+.updates/
+*.dpapi
+*.update-tmp
