@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private readonly AccountEnrollment enrollment;
     private readonly LoginQueue loginQueue = new();
     private readonly DispatcherTimer sessionTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private readonly DispatcherTimer moderationClock = new() { Interval = TimeSpan.FromMinutes(1) };
     private AccountBrowser? activeLoginBrowser;
     private Task? addition;
     private bool closing;
@@ -50,6 +51,8 @@ public partial class MainWindow : Window
         if (removed > 0) Status.Text = $"Cleared {removed} unfinished login placeholder(s).";
         if (monitorSessions)
         {
+            moderationClock.Tick += (_, _) => { if (!closing) Refresh(); };
+            Loaded += (_, _) => moderationClock.Start();
             Loaded += async (_, _) => { await CheckSessions(state.Accounts.ToList(), false); if (!closing) sessionTimer.Start(); };
             sessionTimer.Tick += async (_, _) => await CheckSessions(state.Accounts.ToList(), false);
         }
@@ -62,7 +65,7 @@ public partial class MainWindow : Window
                 catch (Exception ex) { e.Cancel = true; Status.Text = "Notes could not be saved. " + Security.Friendly(ex); }
             }
         };
-        Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); DisableMulti(); this.api.Dispose(); };
+        Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); moderationClock.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); DisableMulti(); this.api.Dispose(); };
     }
 
     private void UpdateProtectionLabel()
@@ -174,6 +177,7 @@ public partial class MainWindow : Window
     {
         int count = AccountsGrid.SelectedItems.Count;
         SelectedLabel.Text = count == 0 ? "Select an account" : count > 1 ? $"{count} accounts selected" : "@" + Selected().Username;
+        if (ModerationDetails is not null) ModerationDetails.Text = count == 1 ? Selected().ModerationDetails : "Select one account to see ban status, duration, and the latest check.";
         if (!refreshing) RefreshNotes();
     }
     private void RefreshNotes()
@@ -346,14 +350,16 @@ public partial class MainWindow : Window
                 if (closing || !state.Accounts.Contains(a)) break;
                 if (ReferenceEquals(enrollment.Current, a)) continue;
                 a.SessionStatus = "Checking…"; Refresh();
-                try { await browsers.VerifiedCookie(a); }
+                try { await browsers.CheckHealth(a); }
                 catch (RobloxApiError ex) when (ex.StatusCode == 429) { rateLimited = true; break; }
-                catch { /* BrowserHub records expired, verification, and transient failures separately. */ }
+                catch { /* Session and moderation failures retain their separate last known results. */ }
                 if (!closing) Refresh();
                 await Task.Delay(650);
             }
-            if (manual && !closing) Status.Text = rateLimited ? "Roblox rate limited session checks. Remaining accounts were left unchanged; retry later." : "Session check finished. Expired accounts can be reconnected with Sign in.";
+            if (!closing && accounts.Count > 0) { vault.Save(state); Refresh(); }
+            if (manual && !closing) Status.Text = rateLimited ? "Roblox rate limited status checks. Remaining accounts were left unchanged; retry later." : "Session and ban checks finished. See the Ban status tab for details.";
         }
+        catch (Exception ex) { if (!closing) Status.Text = "Status results could not be saved. " + Security.Friendly(ex); }
         finally { checkingSessions = false; }
     }
 
@@ -481,7 +487,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.5.1\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.5.2\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

@@ -86,6 +86,8 @@ public static class LoginInput
 // Only this exact top-level page can receive credentials. Both native code and JS check it.
 public static class LoginAutofill
 {
+    public static bool CanSubmit(LoginCredential? credential) => credential is not null && credential.Password.Length > 0;
+    public static string NewAttemptKey() => "__ram_login_" + Guid.NewGuid().ToString("N");
     public static bool IsLoginPage(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
         Security.IsRobloxWebsite(uri) && uri.IdnHost.Equals("www.roblox.com", StringComparison.OrdinalIgnoreCase) &&
         uri.AbsolutePath.TrimEnd('/').Equals("/login", StringComparison.OrdinalIgnoreCase);
@@ -107,6 +109,39 @@ public static class LoginAutofill
           return true;
         })();
         """;
+
+    public static string SubmitScript(string key, string username, string password)
+    {
+        if (!Regex.IsMatch(key, @"^__ram_login_[a-f0-9]{32}$")) throw new UserError("Invalid login attempt identifier.");
+        return """
+            (() => {
+              if (location.protocol !== 'https:' || location.hostname !== 'www.roblox.com' ||
+                  (location.port && location.port !== '443') || location.pathname.replace(/\/$/,'').toLowerCase() !== '/login') return false;
+            """ + "\nconst key = " + JsonSerializer.Serialize(key) + ";\nconst values = " + JsonSerializer.Serialize(new[] { username, password }) + ";\n" + """
+              let attempt = window[key];
+              if (attempt && attempt.submitted) return true;
+              const user = document.querySelector('#login-username');
+              const pass = document.querySelector('#login-password');
+              const button = document.querySelector('#login-button');
+              if (!(user instanceof HTMLInputElement) || !(pass instanceof HTMLInputElement) || pass.type !== 'password' ||
+                  !(button instanceof HTMLButtonElement)) return false;
+              if (!attempt) {
+                attempt = {submitted:false, button:null};
+                Object.defineProperty(window, key, {value:attempt, configurable:true, enumerable:false});
+              }
+              if (attempt.button !== button) {
+                attempt.button = button;
+                button.addEventListener('click', () => { attempt.submitted = true; }, {capture:true, once:true});
+              }
+              if (!values[1] || user.value !== values[0] || pass.value !== values[1] || button.disabled ||
+                  button.getAttribute('aria-disabled') === 'true' || !button.getClientRects().length ||
+                  getComputedStyle(button).visibility === 'hidden') return false;
+              attempt.submitted = true;
+              button.click();
+              return true;
+            })();
+            """;
+    }
 }
 
 // Staging is independent of the saved account list. Failed/canceled logins never create rows.

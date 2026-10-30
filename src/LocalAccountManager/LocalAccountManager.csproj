@@ -10,7 +10,7 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.5.1</Version>
+    <Version>1.5.2</Version>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishSingleFile>true</PublishSingleFile>

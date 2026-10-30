@@ -51,18 +51,26 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         return browser;
     }
 
-    public async Task<string> VerifiedCookie(Account account)
+    private async Task<string> ReadCookie(Account account)
+    {
+        if (browsers.TryGetValue(account.Id, out var open)) return await open.ReadSession();
+        if (account.SessionCookie.Length > 0) return account.SessionCookie;
+        var helper = await Open(account, visible: false);
+        try { return await helper.ReadSession(); } finally { helper.Close(); }
+    }
+
+    public async Task<string> VerifiedCookie(Account account) => await VerifyCookie(account, await ReadCookieForCheck(account));
+
+    private async Task<string> ReadCookieForCheck(Account account)
+    {
+        try { return await ReadCookie(account); }
+        catch (Exception ex) { SessionHealth.Failure(account, ex); throw; }
+    }
+
+    private async Task<string> VerifyCookie(Account account, string cookie)
     {
         try
         {
-            string cookie;
-            if (browsers.TryGetValue(account.Id, out var open)) cookie = await open.ReadSession();
-            else if (account.SessionCookie.Length > 0) cookie = account.SessionCookie;
-            else
-            {
-                var helper = await Open(account, visible: false);
-                try { cookie = await helper.ReadSession(); } finally { helper.Close(); }
-            }
             var identity = await api.Identity(cookie);
             if (account.UserId == 0 || identity.Id != account.UserId)
             { account.SessionStatus = "Wrong account · sign in"; throw new UserError("This session belongs to a different account. Click Sign in to reconnect the selected account."); }
@@ -71,6 +79,24 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
             return cookie;
         }
         catch (Exception ex) { if (!account.SessionStatus.StartsWith("Wrong account")) SessionHealth.Failure(account, ex); throw; }
+    }
+
+    public async Task CheckHealth(Account account)
+    {
+        string cookie;
+        try { cookie = await ReadCookieForCheck(account); }
+        catch (Exception ex) { Moderation.Failure(account, ex); throw; }
+        RobloxApiError? restrictedIdentity = null;
+        try { await VerifyCookie(account, cookie); }
+        // Moderation can remain readable when a restriction blocks the normal identity endpoint.
+        catch (RobloxApiError ex) when (ex.StatusCode is 401 or 403) { restrictedIdentity = ex; }
+        catch (Exception ex) { Moderation.Failure(account, ex); throw; }
+        try
+        {
+            Moderation.Apply(account, await api.Restriction(cookie));
+            if (account.Restriction is not null && restrictedIdentity is not null) account.SessionStatus = "Restricted · open browser";
+        }
+        catch (Exception ex) { Moderation.Failure(account, ex); throw; }
     }
 
     public async Task Clear(Account account)
@@ -101,6 +127,9 @@ public sealed partial class AccountBrowser : Window
     private LoginCredential? login;
     private bool loginMode;
     private bool filled;
+    private bool autofilling;
+    private bool loginSubmitted;
+    private string loginAttemptKey = "";
     private bool ticking;
     private string? lastAttemptedCookie;
     private TaskCompletionSource<LoginOutcome> loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -254,7 +283,8 @@ public sealed partial class AccountBrowser : Window
         await ClearSession();
         if (disposed) { loginComplete.TrySetResult(LoginOutcome.Stopped); return; }
         loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        login = credential; filled = false; lastAttemptedCookie = null; loginMode = true; loginAbandoned = false;
+        login = credential; filled = false; loginSubmitted = false; loginAttemptKey = LoginAutofill.NewAttemptKey();
+        lastAttemptedCookie = null; loginMode = true; loginAbandoned = false;
         skipLogin.Visibility = allowSkip ? Visibility.Visible : Visibility.Collapsed;
         Title = "Roblox sign in · " + progress;
         status.Text = progress + " · Complete the Roblox login." + (allowSkip ? " Skip account moves to the next login without saving this one." : "") + " Close this browser to stop the queue.";
@@ -274,13 +304,38 @@ public sealed partial class AccountBrowser : Window
     private async Task Autofill()
     {
         var credential = login;
-        if (disposed || filled || credential is null || !LoginAutofill.IsLoginPage(web.CoreWebView2.Source)) return;
-        string result = await web.CoreWebView2.ExecuteScriptAsync(LoginAutofill.Script(credential.Username, credential.Password));
-        if (!disposed && ReferenceEquals(login, credential) && result == "true")
+        string attemptKey = loginAttemptKey;
+        if (disposed || !loginMode || autofilling || credential is null || !LoginAutofill.IsLoginPage(web.CoreWebView2.Source)) return;
+        bool Current() => !disposed && loginMode && !loginAbandoned && ReferenceEquals(login, credential) && loginAttemptKey == attemptKey;
+        autofilling = true;
+        try
         {
-            filled = true;
-            status.Text = "Filled @" + credential.Username + ". Click Log In and complete any Roblox verification." + (skipLogin.Visibility == Visibility.Visible ? " Skip account advances without saving this login." : "") + " Close the browser to stop the queue.";
+            if (!filled)
+            {
+                string result = await web.CoreWebView2.ExecuteScriptAsync(LoginAutofill.Script(credential.Username, credential.Password));
+                if (!Current() || result != "true") return;
+                filled = true;
+                status.Text = "Filled @" + credential.Username + ".";
+            }
+            if (!Current() || loginSubmitted || !LoginAutofill.CanSubmit(credential)) return;
+            if (!LoginAutofill.IsLoginPage(web.CoreWebView2.Source)) return;
+            // Reserve the attempt before awaiting JS. An uncertain response must never cause another click.
+            loginSubmitted = true;
+            try
+            {
+                string result = await web.CoreWebView2.ExecuteScriptAsync(LoginAutofill.SubmitScript(attemptKey, credential.Username, credential.Password));
+                if (!Current()) return;
+                if (result == "false")
+                {
+                    loginSubmitted = false;
+                    status.Text = "Details filled. Waiting for Log In to become ready; you can also click it manually.";
+                }
+                else if (result == "true") status.Text = "Log In pressed. Complete any Roblox verification. The next account opens after a verified sign-in.";
+                else status.Text = "Automatic login could not be confirmed. Complete the login manually.";
+            }
+            catch { if (Current()) status.Text = "Automatic login could not be confirmed. Complete the login manually."; }
         }
+        finally { autofilling = false; }
     }
 
     public async Task RestoreSession(string cookie)

@@ -54,7 +54,7 @@ public sealed record GameTarget(long? PlaceId, string? PrivateUrl)
 public static class Security
 {
     private static readonly HashSet<string> ApiHosts = new(StringComparer.OrdinalIgnoreCase)
-        { "users.roblox.com", "auth.roblox.com", "games.roblox.com", "groups.roblox.com" };
+        { "users.roblox.com", "auth.roblox.com", "games.roblox.com", "groups.roblox.com", "usermoderation.roblox.com" };
 
     public static bool IsRobloxWebsite(Uri uri) => uri.Scheme == "https" && uri.IsDefaultPort && uri.UserInfo.Length == 0 &&
         (uri.IdnHost.Equals("www.roblox.com", StringComparison.OrdinalIgnoreCase) || uri.IdnHost.Equals("roblox.com", StringComparison.OrdinalIgnoreCase));

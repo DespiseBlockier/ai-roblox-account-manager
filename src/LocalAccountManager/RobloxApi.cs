@@ -70,6 +70,13 @@ public sealed class RobloxApi : IDisposable
         return new(id, name, display);
     }
 
+    public async Task<ModerationRestriction?> Restriction(string cookie)
+    {
+        using var response = await Send(HttpMethod.Get, "https://usermoderation.roblox.com/v1/not-approved", cookie);
+        using var json = await Json(response);
+        return Moderation.Parse(json.RootElement);
+    }
+
     public async Task<bool> IsGroupMember(string cookie, long userId, long groupId)
     {
         GroupTarget.Validate(groupId);

@@ -23,13 +23,19 @@
         <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <DockPanel Margin="15,13"><TextBlock x:Name="CountLabel" FontWeight="SemiBold" VerticalAlignment="Center"/><CheckBox x:Name="StarredOnly" Content="Favorites only" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0" Checked="FavoriteFilter_Changed" Unchecked="FavoriteFilter_Changed"/></DockPanel>
           <Grid Grid.Row="1">
-            <DataGrid x:Name="AccountsGrid" SelectionChanged="Accounts_Changed" MouseDoubleClick="Accounts_DoubleClick">
+            <DataGrid x:Name="AccountsGrid" RowHeight="78" SelectionChanged="Accounts_Changed" MouseDoubleClick="Accounts_DoubleClick">
+              <DataGrid.RowStyle><Style TargetType="DataGridRow"><Style.Triggers>
+                <DataTrigger Binding="{Binding HasRestriction}" Value="True"><Setter Property="Background" Value="#3C2027"/><Setter Property="BorderBrush" Value="#C85361"/><Setter Property="BorderThickness" Value="3,0,0,0"/></DataTrigger>
+              </Style.Triggers></Style></DataGrid.RowStyle>
+              <DataGrid.Resources><Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}"><Style.Triggers>
+                <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding HasRestriction}" Value="True"/><Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Background" Value="#66313D"/><Setter Property="Foreground" Value="#FFF0F2"/></MultiDataTrigger>
+              </Style.Triggers></Style></DataGrid.Resources>
               <DataGrid.Columns>
                 <DataGridTextColumn Binding="{Binding Star}" Width="32" CanUserSort="False"/>
                 <DataGridTemplateColumn Header="ACCOUNT" Width="*" MinWidth="180" SortMemberPath="Username"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="14"/><TextBlock Text="{Binding Handle}" Foreground="#9BA8BB" FontSize="11" Margin="0,2,0,0"/><TextBlock Text="{Binding CredentialLabel}" Foreground="#79869A" FontSize="10" Margin="0,1,0,0"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="NOTE" Width="150"><DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding NotePreview}" ToolTip="{Binding Notes}" Foreground="#A9B3C5" FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                 <DataGridTextColumn Header="GROUP" Binding="{Binding Group}" Width="105"/>
-                <DataGridTemplateColumn Header="SESSION" Width="150" SortMemberPath="LastUsed"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding SessionStatus}" Foreground="{Binding SessionColor}" ToolTip="{Binding SessionCheckLabel}" FontSize="11"/><TextBlock Text="{Binding LastUsedLabel}" Foreground="#9BA8BB" FontSize="11" Margin="0,4,0,0"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="STATUS" Width="185" SortMemberPath="LastUsed"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding SessionStatus}" Foreground="{Binding SessionColor}" ToolTip="{Binding SessionCheckLabel}" FontSize="11"/><TextBlock Text="{Binding ModerationLabel}" Foreground="{Binding ModerationColor}" ToolTip="{Binding ModerationDetails}" FontSize="11" FontWeight="SemiBold" Margin="0,3,0,0"/><TextBlock Text="{Binding ModerationTiming}" Foreground="#A9B3C5" FontSize="10"/><TextBlock Text="{Binding LastUsedLabel}" Foreground="#79869A" FontSize="10" Margin="0,2,0,0"/></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
               </DataGrid.Columns>
             </DataGrid>
             <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False" Margin="18">
@@ -55,8 +61,8 @@
             <TextBlock Text="Server Job ID · optional" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,12,0,6"/>
             <TextBox x:Name="JobInput" AutomationProperties.Name="Server Job ID" MaxLength="40"/>
             <Button Content="▶   Join server" Style="{StaticResource Primary}" Click="Join_Click" Margin="0,16,0,8" Padding="12,11"/>
-            <UniformGrid Columns="2"><Button Content="Open browser" Click="Browser_Click"/><Button Content="Check session" Click="Check_Click" Margin="0"/></UniformGrid>
-            <Button Content="Sign in · fill saved login" Click="SignIn_Click" Margin="0,8,0,0" ToolTip="Opens Roblox login and fills the saved username and password. You complete the login and any verification."/>
+            <UniformGrid Columns="2"><Button Content="Open browser" Click="Browser_Click"/><Button x:Name="CheckStatusButton" Content="Check status" Click="Check_Click" Margin="0" ToolTip="Check the selected accounts' sessions and ban status."/></UniformGrid>
+            <Button Content="Sign in · use saved login" Click="SignIn_Click" Margin="0,8,0,0" ToolTip="Fills the saved username and password and presses Log In once. Complete any verification on Roblox."/>
             <Button Content="Open browser with code…" Click="BrowserCode_Click" Margin="0,8,0,0" ToolTip="Run JavaScript sequentially for the selected accounts, or generate the group-join example."/>
             <UniformGrid Columns="2" Margin="0,8,0,0"><Button Content="Server list" Click="Servers_Click"/><Button Content="Save target" Click="SaveTarget_Click" Margin="0"/></UniformGrid>
             <CheckBox x:Name="MultiInstance" Content="Multi-instance · experimental" Checked="Multi_Changed" Unchecked="Multi_Changed" Margin="0,16,0,0" ToolTip="Legacy mutex method. Enable with Roblox closed. Compatibility depends on the current Roblox client."/>
@@ -78,8 +84,16 @@
             <Button x:Name="SaveNotesButton" Grid.Row="3" Content="Save notes" Click="SaveNotes_Click" Style="{StaticResource Primary}" Margin="0,12,0,0" IsEnabled="False"/>
           </Grid>
         </TabItem>
+        <TabItem x:Name="ModerationTab" Header="Ban status">
+          <DockPanel Margin="14">
+            <Button DockPanel.Dock="Bottom" Content="Open account browser" Click="Browser_Click" Margin="0,12,0,0"/>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <TextBlock x:Name="ModerationDetails" Text="Select one account to see ban status, duration, and the latest check." TextWrapping="Wrap" Foreground="#DCE2EC" LineHeight="21"/>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
       </TabControl>
     </Grid>
-    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.5.1  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
+    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.5.2  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
   </Grid>
 </Window>

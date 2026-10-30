@@ -12,6 +12,8 @@ GPL-3.0 was chosen for this distribution to align with the reference project's l
 
 The matching application source, build scripts, and original icon assets are available at the release tag and in the source ZIP attached beside the binary release. Recipients of the application must also receive the applicable notices and access to corresponding source under the GPL. Private hosting does not waive license obligations or guarantee protection against copyright or trademark claims.
 
+Ban monitoring uses a new local implementation of Roblox's moderation endpoint after reviewing [Pixeluted/RobloxBanMonitor](https://github.com/Pixeluted/RobloxBanMonitor), reference commit `9e31d676b5d9c71c655fcd37e886136611a7ec04`. No source code or assets from that repository are redistributed.
+
 ## Third-party components
 
 - **Microsoft .NET / WPF:** distributed under their respective Microsoft/open-source notices. The self-contained release includes the supplied runtime licenses and third-party notices under `Docs/ThirdPartyNotices`.

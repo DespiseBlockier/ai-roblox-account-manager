@@ -17,6 +17,21 @@ public sealed class Account
     public string SavedJob { get; set; } = "";
     public string SavedPassword { get; set; } = "";
     public string SessionCookie { get; set; } = "";
+    public ModerationRestriction? Restriction { get; set; }
+    public DateTimeOffset? ModerationCheckedAt { get; set; }
+    [JsonIgnore] public string ModerationCheckStatus { get; set; } = "Not checked this session";
+    [JsonIgnore] public bool HasRestriction => Restriction is not null && !Restriction.IsWarning;
+    [JsonIgnore] public string ModerationLabel => Restriction?.Label(DateTimeOffset.UtcNow) ?? (ModerationCheckedAt is null ? "Ban not checked" : "No active ban");
+    [JsonIgnore] public string ModerationTiming => Restriction?.Timing ?? "";
+    [JsonIgnore] public string ModerationColor => Restriction is null ? "#A9B3C5" : Restriction.IsWarning || Restriction.HasExpired(DateTimeOffset.UtcNow) ? "#F6C977" : "#FF927D";
+    [JsonIgnore] public string ModerationDetails => ModerationLabel + "\n" +
+        (Restriction is { } restriction ? (restriction.Began is { } start ? "\nStarted: " + start.ToLocalTime().ToString("f") : "\nStart date unavailable") +
+            (restriction.Ends is { } end ? "\nEnds: " + end.ToLocalTime().ToString("f") : "\nRoblox did not provide an end date. Duration is unknown.") +
+            (restriction.Began is { } began && restriction.Ends is { } ends && ends > began ? "\nDuration: " + ModerationRestriction.Duration(ends - began) : "") +
+            (restriction.HasExpired(DateTimeOffset.UtcNow) ? "\nThe end time has passed. Open the browser to review/reactivate; this does not confirm the account is unbanned." : "") +
+            (restriction.Reason.Length > 0 ? "\n\nRoblox message:\n" + restriction.Reason : "") + "\n" : "") +
+        "\n" + ModerationCheckStatus + (ModerationCheckedAt is { } time ? "\nLast successful check: " + time.ToLocalTime().ToString("f") : "") +
+        "\n\nChecks run at startup and every 5 minutes while the manager is open. Check status refreshes selected accounts. A failed check keeps the last known result.";
     [JsonIgnore] public string Label => string.IsNullOrWhiteSpace(Alias) ? DisplayName : Alias;
     [JsonIgnore] public string Initial => Username.Length > 0 ? Username[..1].ToUpperInvariant() : "?";
     [JsonIgnore] public string Handle => UserId > 0 ? "@" + Username : "Login required";

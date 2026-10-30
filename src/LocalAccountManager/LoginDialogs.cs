@@ -14,7 +14,7 @@ public sealed class LoginInputWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = bulk ? "username;password;group;\"Note\"" : "Enter your Roblox login", FontSize = 20, FontWeight = FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = "The queue fills Roblox's login page. Click Log In and complete any verification. It advances after a verified login; closing its browser stops the queue. Passwords and cookies are saved only after connecting, using your chosen vault protection. No master password (Not recommended) leaves them readable.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 14) });
+        panel.Children.Add(new TextBlock { Text = "The queue fills your details and presses Log In once. Complete any Roblox verification yourself. It advances after a verified sign-in; closing its browser stops the queue. Passwords and cookies are saved only after connecting, using your chosen vault protection. No master password (Not recommended) leaves them readable.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 14) });
         var username = new TextBox { MaxLength = 20 };
         var password = new PasswordBox { MaxLength = 1024 };
         var group = new ComboBox { IsEditable = true, ItemsSource = (groups ?? []).Distinct().OrderBy(g => g).ToList() };
@@ -63,7 +63,7 @@ public sealed class SavedPasswordWindow : Window
         SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(24) };
         panel.Children.Add(new TextBlock { Text = "Saved password for @" + username, FontSize = 18, FontWeight = FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = "Used by Sign in to fill Roblox's login page. Leave empty to forget it. This changes the local saved password; it does not change your password on Roblox. Storage follows Vault security. No master password (Not recommended) stores it in readable form.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "Used by Sign in to fill Roblox's login page and press Log In once. Leave empty to forget it. This changes the local saved password; it does not change your password on Roblox. Storage follows Vault security. No master password (Not recommended) stores it in readable form.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 12) });
         password = new PasswordBox { Password = saved, MaxLength = 1024 }; panel.Children.Add(password);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
         buttons.Children.Add(new Button { Content = "Cancel", IsCancel = true });
