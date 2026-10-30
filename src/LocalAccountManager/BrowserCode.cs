@@ -1,0 +1,152 @@
+using System.Globalization;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace LocalAccountManager;
+
+public static class GroupTarget
+{
+    public const long MaxScriptId = 9_007_199_254_740_991;
+    public static long Parse(string value)
+    {
+        value = value.Trim();
+        if (value.Any(char.IsControl) || value.Length > 4096) throw new UserError("Enter a group/community ID or a Roblox community link.");
+        if (GameTarget.TryId(value, out long id)) return Validate(id);
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || !Security.IsRobloxWebsite(uri))
+            throw new UserError("Enter a group/community ID or an HTTPS Roblox community link.");
+        var match = Regex.Match(uri.AbsolutePath, @"^/(?:groups|communities)/([0-9]+)(?:/[^/]*)?/?$", RegexOptions.CultureInvariant);
+        if (!match.Success || !GameTarget.TryId(match.Groups[1].Value, out id)) throw new UserError("That link does not identify a Roblox group/community.");
+        return Validate(id);
+    }
+    public static long Validate(long id) => id > 0 && id <= MaxScriptId ? id : throw new UserError("Invalid group/community ID.");
+    public static string Url(long id) => "https://www.roblox.com/communities/" + Validate(id).ToString(CultureInfo.InvariantCulture);
+}
+
+public sealed record BrowserCodeRequest(string Url, string Code, TimeSpan Timeout, long? ConfirmGroupId = null)
+{
+    public BrowserCodeRequest Validate()
+    {
+        if (!Security.IsBrowserPage(Url) || Url.Length > 4096 || Url.Any(char.IsControl) || LoginAutofill.IsLoginPage(Url))
+            throw new UserError("Choose a signed-in Roblox HTTPS page as the starting URL.");
+        if (string.IsNullOrWhiteSpace(Code) || Code.Length > 128_000 || Code.Contains('\0')) throw new UserError("Enter JavaScript code (up to 128,000 characters).");
+        if (Timeout < TimeSpan.FromSeconds(1) || Timeout > TimeSpan.FromHours(2)) throw new UserError("Choose a timeout of up to 120 minutes per account.");
+        if (ConfirmGroupId is long group) GroupTarget.Validate(group);
+        return this with { Url = new Uri(Url).AbsoluteUri };
+    }
+}
+
+public enum BrowserCodeOutcome { Completed, Stopped, Failed }
+public sealed record BrowserCodeResult(BrowserCodeOutcome Outcome, string Message);
+public sealed record BrowserCodeState(string Phase, string Message);
+
+public static class BrowserCodeRuntime
+{
+    public static string NewKey() => "__ram_run_" + Guid.NewGuid().ToString("N");
+    private static string Key(string key)
+    {
+        if (!Regex.IsMatch(key, @"^__ram_run_[a-f0-9]{32}$")) throw new UserError("Invalid browser-code run identifier.");
+        return JsonSerializer.Serialize(key);
+    }
+
+    public static string Install(string key, Account account, string code)
+    {
+        // Only account identity is passed to JavaScript. Never include passwords, cookies, or native objects.
+        string identity = JsonSerializer.Serialize(new { userId = account.UserId.ToString(CultureInfo.InvariantCulture), username = account.Username });
+        return """
+            (() => {
+              if (location.protocol !== 'https:' || !['www.roblox.com','roblox.com'].includes(location.hostname) ||
+                  (location.port && location.port !== '443') || location.pathname.replace(/\/$/, '').toLowerCase() === '/login') return null;
+            """ + "\nconst key = " + Key(key) + ";\nconst identity = " + identity + ";\n" + """
+              const abort = new AbortController();
+              let phase = 'running', message = 'Code is running.';
+              const text = value => String(value ?? '').slice(0, 2000);
+              const finish = (next, value) => {
+                if (phase === 'done' || phase === 'stopped' || phase === 'failed') return;
+                phase = next; message = text(value);
+              };
+              const ram = Object.freeze({
+                account: Object.freeze(identity), signal: abort.signal,
+                status: value => { if (phase === 'running' || phase === 'waiting') message = text(value); },
+                done: () => { finish('done', 'Code requested completion.'); abort.abort(); },
+                stop: value => { finish('stopped', value || 'Code stopped the queue.'); abort.abort(); },
+                sleep: ms => new Promise((resolve, reject) => {
+                  if (abort.signal.aborted) { reject(new Error('Stopped')); return; }
+                  const stop = () => { clearTimeout(timer); reject(new Error('Stopped')); };
+                  const timer = setTimeout(() => { abort.signal.removeEventListener('abort', stop); resolve(); }, Math.max(0, Math.min(Number(ms) || 0, 300000)));
+                  abort.signal.addEventListener('abort', stop, {once:true});
+                })
+              });
+              Object.defineProperty(window, key, {configurable:true, enumerable:false, value:Object.freeze({
+                snapshot: () => ({phase, message}),
+                stop: () => { abort.abort(); finish('stopped', 'Stopped'); }
+              })});
+              setTimeout(async () => {
+                try {
+                  await (async function(ram) {
+            """ + "\n" + code + "\n" + """
+                  })(ram);
+                  if (phase === 'running') { phase = 'waiting'; message = 'Code returned. Call ram.done() to close this account and advance.'; }
+                } catch (error) {
+                  if (!abort.signal.aborted) finish('failed', error && error.message ? error.message : 'JavaScript failed.');
+                }
+              }, 0);
+              return {installed:true};
+            })();
+            """;
+    }
+
+    public static string Read(string key) => "(() => { const run = window[" + Key(key) + "]; return run ? run.snapshot() : null; })();";
+    public static string Stop(string key) => "(() => { const run = window[" + Key(key) + "]; if (run) run.stop(); })();";
+    public static BrowserCodeState Parse(string json)
+    {
+        if (json.Length > 16_384) throw new UserError("Browser code returned too much status data.");
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new UserError("The page changed while code was running. The queue stopped without replaying code.");
+            string phase = doc.RootElement.GetProperty("phase").GetString() ?? "";
+            if (phase is not ("running" or "waiting" or "done" or "stopped" or "failed")) throw new UserError("Invalid browser-code status.");
+            string message = doc.RootElement.GetProperty("message").GetString() ?? "";
+            if (message.Length > 2000) message = message[..2000];
+            return new(phase, message);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        { throw new UserError("Could not read browser-code status. The queue stopped."); }
+    }
+
+    public static string JoinGroupExample(long groupId)
+    {
+        GroupTarget.Validate(groupId);
+        using var stream = typeof(BrowserCodeRuntime).Assembly.GetManifestResourceStream("LocalAccountManager.JoinGroup.js") ?? throw new UserError("The built-in group example is missing.");
+        using var reader = new System.IO.StreamReader(stream);
+        return reader.ReadToEnd().Replace("/* GROUP_ID */ 12345678", groupId.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    public const string Starter = "// Runs once for each selected account.\nram.status('Opened @' + ram.account.username);\nawait ram.sleep(1000);\nram.done(); // Close this browser and move to the next account.\n";
+}
+
+public sealed class BrowserCodeQueue
+{
+    public bool IsRunning { get; private set; }
+    public async Task<List<BrowserCodeResult>> Run(IReadOnlyList<Account> accounts,
+        Func<Account, CancellationToken, Task<BrowserCodeResult>> runOne, CancellationToken cancellationToken)
+    {
+        if (IsRunning) throw new UserError("A browser-code queue is already running.");
+        IsRunning = true;
+        var results = new List<BrowserCodeResult>();
+        try
+        {
+            foreach (var account in accounts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = await runOne(account, cancellationToken);
+                results.Add(result);
+                if (result.Outcome != BrowserCodeOutcome.Completed) break;
+                if (results.Count < accounts.Count) await Task.Delay(1500, cancellationToken);
+            }
+            return results;
+        }
+        finally { IsRunning = false; }
+    }
+}

@@ -1,0 +1,105 @@
+[CmdletBinding()]
+param()
+$ErrorActionPreference = 'Stop'
+$taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$project = Join-Path $taskRoot 'src\LocalAccountManager\LocalAccountManager.csproj'
+[xml]$projectXml = Get-Content -LiteralPath $project -Raw
+$version = [string]$projectXml.Project.PropertyGroup.Version
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+$env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+$env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+$env:NUGET_PACKAGES = Join-Path $taskRoot '.tools\packages'
+$sdk = Join-Path $taskRoot '.tools\dotnet\dotnet.exe'
+if (-not (Test-Path -LiteralPath $sdk)) { $sdk = (Get-Command dotnet -ErrorAction Stop).Source }
+$stagingParent = [IO.Path]::GetFullPath((Join-Path $taskRoot 'dist\.release-staging'))
+$staging = Join-Path $stagingParent ([Guid]::NewGuid().ToString('N'))
+$package = Join-Path $staging 'RobloxAccountManager'
+$releaseDir = Join-Path $taskRoot 'releases'
+$localDir = Join-Path $taskRoot ('dist\v' + $version)
+$zip = Join-Path $releaseDir ('RobloxAccountManager-' + $version + '-win-x64.zip')
+function Assert-GeneratedPath([string]$path, [string]$parent) {
+    $full = [IO.Path]::GetFullPath($path)
+    $prefix = [IO.Path]::GetFullPath($parent).TrimEnd('\') + '\'
+    if (-not $full.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Generated path left its intended directory.' }
+}
+function Get-Digest([string]$path) {
+    $stream = [IO.File]::OpenRead($path)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose(); $stream.Dispose() }
+}
+Assert-GeneratedPath $staging $stagingParent
+New-Item -ItemType Directory -Force -Path $package,$releaseDir | Out-Null
+try {
+    & $sdk restore $project --runtime win-x64 -p:SelfContained=true --configfile (Join-Path $taskRoot 'NuGet.Config') --locked-mode
+    if ($LASTEXITCODE -ne 0) { throw 'Restore failed. Install a .NET 10 SDK and check NuGet connectivity.' }
+    & $sdk publish $project --no-restore -c Release --runtime win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $package
+    if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+    foreach ($name in @('README.md','SECURITY.md','SOURCE_REVIEW.md','BROWSER_CODE.md','LICENSE','NOTICE.md')) {
+        Copy-Item -LiteralPath (Join-Path $taskRoot $name) -Destination (Join-Path $package $name)
+    }
+    New-Item -ItemType Directory -Path (Join-Path $package 'examples') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'examples\join-group.js') -Destination (Join-Path $package 'examples\join-group.js')
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'src\LocalAccountManager\Assets\AppIcon.png') -Destination (Join-Path $package 'AppIcon.png')
+    @'
+Roblox Account Manager - Portable
+
+Extract this entire folder, then open RobloxAccountManager.exe.
+The .NET runtime is included. Microsoft Edge WebView2 Runtime must be installed.
+Create or unlock your master-password vault on first launch.
+All account data is created in Data beside the EXE. Copy the ENTIRE folder to your USB.
+Use the same master password on another Windows PC; Roblox may require a fresh login.
+Keep your master password safe. The app cannot recover it.
+
+This release starts empty. It contains no builder accounts, passwords, cookies or browser profiles.
+Share the original ZIP, not your used folder containing Data.
+'@ | Set-Content -LiteralPath (Join-Path $package 'START-HERE.txt') -Encoding UTF8
+    $notices = Join-Path $package 'ThirdPartyNotices'
+    New-Item -ItemType Directory -Path $notices | Out-Null
+    foreach ($name in @('LICENSE.txt','ThirdPartyNotices.txt')) {
+        $notice = Join-Path (Split-Path -Parent $sdk) $name
+        if (Test-Path -LiteralPath $notice) { Copy-Item -LiteralPath $notice -Destination (Join-Path $notices ('DotNet-' + $name)) }
+    }
+    $runtimeConfig = Get-Content -LiteralPath (Join-Path $package 'RobloxAccountManager.runtimeconfig.json') -Raw | ConvertFrom-Json
+    foreach ($framework in $runtimeConfig.runtimeOptions.includedFrameworks) {
+        $packName = switch ($framework.name) { 'Microsoft.NETCore.App' { 'microsoft.netcore.app.runtime.win-x64' } 'Microsoft.WindowsDesktop.App' { 'microsoft.windowsdesktop.app.runtime.win-x64' } default { $null } }
+        if ($packName) {
+            foreach ($name in @('LICENSE.TXT','THIRD-PARTY-NOTICES.TXT')) {
+                $notice = Join-Path (Join-Path (Join-Path $env:NUGET_PACKAGES $packName) $framework.version) $name
+                if (Test-Path -LiteralPath $notice) { Copy-Item -LiteralPath $notice -Destination (Join-Path $notices ($packName + '-' + $name)) }
+            }
+        }
+    }
+    foreach ($name in @('LICENSE.txt','NOTICE.txt')) {
+        $wvLicense = Join-Path $env:NUGET_PACKAGES ('microsoft.web.webview2\1.0.4314.35\' + $name)
+        if (Test-Path -LiteralPath $wvLicense) { Copy-Item -LiteralPath $wvLicense -Destination (Join-Path $notices ('WebView2-' + $name)) }
+    }
+    $files = @(Get-ChildItem -LiteralPath $package -File -Recurse)
+    foreach ($file in $files) {
+        $relative = $file.FullName.Substring($package.Length + 1)
+        if ($relative -match '(^|[\\/])(Data|BrowserData|test-results|\.tools|\.git)([\\/]|$)' -or $file.Name -match '(?i)\.(vault|previous|ramlayout|backup|env|pdb)$') {
+            throw 'Private or development data appeared in compiler output. Release refused.'
+        }
+    }
+    $hashes = $files | Sort-Object FullName | ForEach-Object { '{0}  {1}' -f (Get-Digest $_.FullName),$_.FullName.Substring($package.Length + 1) }
+    $hashes | Set-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt') -Encoding UTF8
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $tempZip = Join-Path $releaseDir ([Guid]::NewGuid().ToString('N') + '.zip')
+    [IO.Compression.ZipFile]::CreateFromDirectory($package,$tempZip,[IO.Compression.CompressionLevel]::Optimal,$true)
+    if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip }
+    [IO.File]::Move($tempZip,$zip)
+    # Preserve any existing local portable Data folder. Copy only fresh package files.
+    foreach ($file in (Get-ChildItem -LiteralPath $package -File -Recurse)) {
+        $destination = Join-Path $localDir $file.FullName.Substring($package.Length + 1)
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+        Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+    }
+    ((Get-Digest $zip) + '  ' + (Split-Path -Leaf $zip)) | Set-Content -LiteralPath ($zip + '.sha256') -Encoding UTF8
+    Write-Output "Shareable ZIP: $zip"
+    Write-Output 'Account data was excluded. Open Start.cmd to launch the local portable app.'
+}
+finally {
+    Assert-GeneratedPath $staging $stagingParent
+    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+}
