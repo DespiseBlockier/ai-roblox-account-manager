@@ -99,8 +99,10 @@ public sealed partial class AccountBrowser : Window
     private bool filled;
     private bool ticking;
     private string? lastAttemptedCookie;
-    private TaskCompletionSource<bool> loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    public Task<bool> LoginCompleted => loginComplete.Task;
+    private TaskCompletionSource<LoginOutcome> loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public Task<LoginOutcome> LoginCompleted => loginComplete.Task;
+    private readonly Button skipLogin = new() { Name = "SkipLogin", Content = "Skip account →", Visibility = Visibility.Collapsed, ToolTip = "Discard this pending login and continue with the next account. Closing the browser stops the entire queue." };
+    private bool loginAbandoned;
     private readonly CancellationTokenSource closedCancellation = new();
     public bool IsClosed => disposed;
 
@@ -115,6 +117,8 @@ public sealed partial class AccountBrowser : Window
         var connect = new Button { Content = "Connect account", Style = (Style)FindResource("Primary") };
         connect.Click += async (_, _) => await Connect();
         DockPanel.SetDock(connect, Dock.Right); top.Children.Add(connect);
+        skipLogin.Click += (_, _) => SkipLogin();
+        DockPanel.SetDock(skipLogin, Dock.Right); top.Children.Add(skipLogin);
         var home = new Button { Content = "Home" }; home.Click += (_, _) => Navigate("https://www.roblox.com/home");
         DockPanel.SetDock(home, Dock.Left); top.Children.Add(home);
         top.Children.Add(address);
@@ -129,7 +133,7 @@ public sealed partial class AccountBrowser : Window
             catch (Exception ex) { if (!disposed) status.Text = Security.Friendly(ex); }
             finally { ticking = false; }
         };
-        Closed += (_, _) => { disposed = true; closedCancellation.Cancel(); loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop(); loginComplete.TrySetResult(false); web.Dispose(); };
+        Closed += (_, _) => { disposed = true; closedCancellation.Cancel(); loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop(); loginComplete.TrySetResult(LoginOutcome.Stopped); web.Dispose(); };
     }
 
     public async Task Initialize()
@@ -201,16 +205,17 @@ public sealed partial class AccountBrowser : Window
 
     public async Task<bool> Connect(bool automatic = false)
     {
-        if (checking || disposed || !ready.Task.IsCompletedSuccessfully) return false;
+        if (checking || disposed || loginAbandoned || !ready.Task.IsCompletedSuccessfully) return false;
         checking = true;
         try
         {
             string cookie = await ReadSession();
+            if (disposed || loginAbandoned) return false;
             if (automatic && cookie == lastAttemptedCookie) return false;
             lastAttemptedCookie = cookie;
             if (!automatic) status.Text = "Checking this browser's Roblox identity…";
             var identity = await api.Identity(cookie);
-            if (disposed) return false;
+            if (disposed || loginAbandoned) return false;
             if (account.UserId > 0 && account.UserId != identity.Id)
                 throw new UserError("This entry belongs to @" + account.Username + ". Sign in to that account, or add a new entry for this account.");
             if (login is not null && !login.Username.Equals(identity.Name, StringComparison.OrdinalIgnoreCase))
@@ -219,24 +224,34 @@ public sealed partial class AccountBrowser : Window
             if (disposed) return false;
             Title = "Roblox · @" + identity.Name + " · Account browser";
             status.Text = "Connected @" + identity.Name + ". You can close this browser and launch games from the manager.";
-            loginMode = false; loginTimer.Stop(); login = null; lastAttemptedCookie = null;
-            loginComplete.TrySetResult(true);
+            loginMode = false; loginTimer.Stop(); login = null; lastAttemptedCookie = null; skipLogin.Visibility = Visibility.Collapsed;
+            loginComplete.TrySetResult(LoginOutcome.Connected);
             return true;
         }
         catch (Exception ex) { if (!disposed && (!automatic || ex is not MissingSessionError)) status.Text = Security.Friendly(ex); return false; }
         finally { checking = false; }
     }
 
-    public async Task BeginLogin(LoginCredential? credential, string progress)
+    public async Task BeginLogin(LoginCredential? credential, string progress, bool allowSkip = false)
     {
         await ClearSession();
-        if (disposed) { loginComplete.TrySetResult(false); return; }
+        if (disposed) { loginComplete.TrySetResult(LoginOutcome.Stopped); return; }
         loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        login = credential; filled = false; lastAttemptedCookie = null; loginMode = true;
+        login = credential; filled = false; lastAttemptedCookie = null; loginMode = true; loginAbandoned = false;
+        skipLogin.Visibility = allowSkip ? Visibility.Visible : Visibility.Collapsed;
         Title = "Roblox sign in · " + progress;
-        status.Text = progress + " · Complete the Roblox login. The next account opens after a successful sign-in. Close this browser to stop.";
+        status.Text = progress + " · Complete the Roblox login." + (allowSkip ? " Skip account moves to the next login without saving this one." : "") + " Close this browser to stop the queue.";
         WindowState = WindowState.Normal; Show(); Activate();
         Navigate("https://www.roblox.com/login"); loginTimer.Start();
+    }
+
+    private void SkipLogin()
+    {
+        if (disposed || !loginMode || skipLogin.Visibility != Visibility.Visible || loginComplete.Task.IsCompleted) return;
+        loginAbandoned = true; loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop();
+        skipLogin.IsEnabled = false;
+        loginComplete.TrySetResult(LoginOutcome.Skipped);
+        Close();
     }
 
     private async Task Autofill()
@@ -247,7 +262,7 @@ public sealed partial class AccountBrowser : Window
         if (!disposed && ReferenceEquals(login, credential) && result == "true")
         {
             filled = true;
-            status.Text = "Filled @" + credential.Username + ". Click Log In and complete any Roblox verification. Close the browser to stop the queue.";
+            status.Text = "Filled @" + credential.Username + ". Click Log In and complete any Roblox verification." + (skipLogin.Visibility == Visibility.Visible ? " Skip account advances without saving this login." : "") + " Close the browser to stop the queue.";
         }
     }
 

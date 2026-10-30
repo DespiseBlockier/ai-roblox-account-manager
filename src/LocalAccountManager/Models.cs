@@ -28,6 +28,7 @@ public sealed class Account
     [JsonIgnore] public string SessionColor => SessionStatus.StartsWith("Valid") ? "#C3F27D" :
         SessionStatus.Contains("Expired") || SessionStatus.Contains("Wrong account") ? "#FF927D" : "#A9B3C5";
     [JsonIgnore] public string CredentialLabel => SavedPassword.Length > 0 ? "Password saved" : "No saved password";
+    [JsonIgnore] public string NotePreview => Notes.Replace('\r', ' ').Replace('\n', ' ');
 }
 
 public sealed class GameBookmark

@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource updateCancel = new();
     private SignedUpdate? availableUpdate;
     private bool checkingUpdates;
+    private readonly Dictionary<Guid, string> noteDrafts = [];
+    private Account? noteAccount;
+    private bool loadingNote;
 
     public MainWindow(Vault vault, AppState state, RobloxApi? api = null, bool monitorSessions = true, bool checkUpdates = true)
     {
@@ -53,6 +56,11 @@ public partial class MainWindow : Window
         Closing += (_, e) =>
         {
             if (busy) { e.Cancel = true; Status.Text = "Wait for the current operation to finish before closing."; }
+            else
+            {
+                try { SavePendingNotes(); }
+                catch (Exception ex) { e.Cancel = true; Status.Text = "Notes could not be saved. " + Security.Friendly(ex); }
+            }
         };
         Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); DisableMulti(); this.api.Dispose(); };
     }
@@ -77,7 +85,7 @@ public partial class MainWindow : Window
             availableUpdate = await updates.CheckAsync(UpdateTrust.CurrentVersion, updateCancel.Token);
             if (closing) return;
             UpdateStatus.Text = availableUpdate is null ? "You're up to date." : $"Version {availableUpdate.Manifest.Version} available. Data stays in place.";
-            UpdateButton.Content = availableUpdate is null ? "Check for updates" : "Update & restart";
+            UpdateButton.Content = availableUpdate is null ? "Check for updates" : "View update";
         }
         catch (Exception ex)
         {
@@ -88,6 +96,7 @@ public partial class MainWindow : Window
     private async void Update_Click(object sender, RoutedEventArgs e)
     {
         if (availableUpdate is null) { await CheckUpdatesAsync(); return; }
+        if (new UpdateReviewWindow(this, UpdateTrust.CurrentVersion, availableUpdate).ShowDialog() != true) return;
         await Run(async () =>
         {
             if (addition is { IsCompleted: false } || enrollment.Current is not null) throw new UserError("Finish or close the current sign-in queue before updating.");
@@ -120,7 +129,7 @@ public partial class MainWindow : Window
         if (busy) return;
         if (BrowserCodeActive) { Status.Text = "Stop the browser-code queue before changing accounts or launching another action."; return; }
         busy = true; AddButton.IsEnabled = false;
-        try { await work(); }
+        try { SavePendingNotes(); await work(); }
         catch (Exception ex) { Status.Text = Security.Friendly(ex); MessageBox.Show(this, Security.Friendly(ex), "Account Manager", MessageBoxButton.OK, MessageBoxImage.Information); }
         finally { busy = false; AddButton.IsEnabled = true; }
     }
@@ -165,7 +174,43 @@ public partial class MainWindow : Window
     {
         int count = AccountsGrid.SelectedItems.Count;
         SelectedLabel.Text = count == 0 ? "Select an account" : count > 1 ? $"{count} accounts selected" : "@" + Selected().Username;
+        if (!refreshing) RefreshNotes();
     }
+    private void RefreshNotes()
+    {
+        if (NotesEditor is null) return;
+        noteAccount = AccountsGrid.SelectedItems.Count == 1 ? AccountsGrid.SelectedItem as Account : null;
+        loadingNote = true;
+        NotesEditor.Text = noteAccount is null ? "" : noteDrafts.GetValueOrDefault(noteAccount.Id, noteAccount.Notes);
+        NotesEditor.IsEnabled = noteAccount is not null;
+        NoteOwner.Text = noteAccount is null ? "Select one account" : "Note for @" + noteAccount.Username;
+        loadingNote = false;
+        NoteDraftStatus();
+    }
+    private void NoteDraftStatus()
+    {
+        SaveNotesButton.IsEnabled = noteDrafts.Count > 0;
+        NotesTab.Header = noteDrafts.Count > 0 ? "Notes *" : "Notes";
+        NotesHint.Text = noteAccount is null ? "Select an account to read its full note." :
+            noteDrafts.ContainsKey(noteAccount.Id) ? "Unsaved note. Drafts are kept when switching accounts; save here or close the manager to save." :
+            noteAccount.Notes.Length == 0 ? "No note yet. Type below to add one." : "Saved note. You can edit it directly below.";
+    }
+    private void Notes_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (loadingNote || noteAccount is null) return;
+        if (NotesEditor.Text == noteAccount.Notes) noteDrafts.Remove(noteAccount.Id);
+        else noteDrafts[noteAccount.Id] = NotesEditor.Text;
+        NoteDraftStatus();
+    }
+    private void SavePendingNotes()
+    {
+        if (noteDrafts.Count == 0) return;
+        BulkEditing.ApplyNotes(state.Accounts, noteDrafts, () => vault.Save(state));
+        noteDrafts.Clear();
+        AccountsGrid.Items.Refresh(); RefreshNotes();
+    }
+    private async void SaveNotes_Click(object sender, RoutedEventArgs e) => await Run(() =>
+    { Status.Text = "Account notes saved."; return Task.CompletedTask; });
     private void Filter_Changed(object sender, TextChangedEventArgs e) { if (!refreshing) Refresh(); }
     private void Group_Changed(object sender, SelectionChangedEventArgs e) { if (!refreshing) Refresh(); }
     private void FavoriteFilter_Changed(object sender, RoutedEventArgs e) { if (!refreshing) Refresh(); }
@@ -180,26 +225,31 @@ public partial class MainWindow : Window
     private void Add_Click(object sender, RoutedEventArgs e)
     {
         if (BrowserCodeActive) { Status.Text = "Stop the browser-code queue before adding accounts."; return; }
-        if (loginQueue.IsRunning) { activeLoginBrowser?.Show(); activeLoginBrowser?.Activate(); return; }
+        if (loginQueue.IsRunning) { ResumeLogin(); return; }
         AddButton.ContextMenu.PlacementTarget = AddButton; AddButton.ContextMenu.IsOpen = true;
+    }
+    private void ResumeLogin()
+    {
+        if (activeLoginBrowser is { IsClosed: false } browser) { browser.Show(); browser.Activate(); }
     }
     private void ManualAdd_Click(object sender, RoutedEventArgs e) => StartAddition([null]);
     private void SingleAdd_Click(object sender, RoutedEventArgs e) => AddCredentials(false);
     private void BulkAdd_Click(object sender, RoutedEventArgs e) => AddCredentials(true);
     private void AddCredentials(bool bulk)
     {
-        if (loginQueue.IsRunning) { activeLoginBrowser?.Activate(); return; }
+        if (loginQueue.IsRunning) { ResumeLogin(); return; }
         var dialog = new LoginInputWindow(this, bulk, state.Accounts.Select(a => a.Group));
-        if (dialog.ShowDialog() == true) StartAddition(dialog.Credentials.Cast<LoginCredential?>().ToList());
+        if (dialog.ShowDialog() == true) StartAddition(dialog.Credentials.Cast<LoginCredential?>().ToList(), allowSkip: bulk);
     }
 
-    private void StartAddition(IReadOnlyList<LoginCredential?> entries)
+    private void StartAddition(IReadOnlyList<LoginCredential?> entries, bool allowSkip = false)
     {
         if (BrowserCodeActive) { foreach (var c in entries) c?.Dispose(); Status.Text = "Stop the browser-code queue before signing in."; return; }
-        if (loginQueue.IsRunning || closing) { foreach (var c in entries) c?.Dispose(); activeLoginBrowser?.Activate(); return; }
-        addition = ProcessAddition(entries);
+        if (loginQueue.IsRunning || closing) { foreach (var c in entries) c?.Dispose(); ResumeLogin(); return; }
+        try { SavePendingNotes(); addition = ProcessAddition(entries, allowSkip); }
+        catch (Exception ex) { foreach (var c in entries) c?.Dispose(); Status.Text = Security.Friendly(ex); }
     }
-    private async Task ProcessAddition(IReadOnlyList<LoginCredential?> entries)
+    private async Task ProcessAddition(IReadOnlyList<LoginCredential?> entries, bool allowSkip)
     {
         try
         {
@@ -207,19 +257,19 @@ public partial class MainWindow : Window
             {
                 var account = enrollment.Begin(credential);
                 AddButton.Content = $"Sign-in {index + 1}/{entries.Count} · Resume";
-                Status.Text = $"Sign-in queue {index + 1}/{entries.Count}. Close its browser to stop.";
+                Status.Text = $"Sign-in queue {index + 1}/{entries.Count}. " + (allowSkip ? "Skip advances without saving; " : "") + "close its browser to stop.";
                 try
                 {
                     activeLoginBrowser = await browsers.Open(account, visible: false);
-                    await activeLoginBrowser.BeginLogin(credential, $"{index + 1}/{entries.Count}" + (credential is null ? "" : " · @" + credential.Username));
-                    bool success = await activeLoginBrowser.LoginCompleted;
-                    if (success && !closing)
+                    await activeLoginBrowser.BeginLogin(credential, $"{index + 1}/{entries.Count}" + (credential is null ? "" : " · @" + credential.Username), allowSkip);
+                    var outcome = await activeLoginBrowser.LoginCompleted;
+                    if (outcome == LoginOutcome.Connected && !closing)
                     {
                         Search.Text = ""; StarredOnly.IsChecked = false; Groups.SelectedItem = "All groups";
                         Refresh(); AccountsGrid.SelectedItem = account;
                         activeLoginBrowser.Close();
                     }
-                    return success && !closing;
+                    return closing ? LoginOutcome.Stopped : outcome;
                 }
                 finally
                 {
@@ -232,7 +282,7 @@ public partial class MainWindow : Window
                     }
                 }
             });
-            if (!closing) Status.Text = $"Sign-in queue finished: {loginQueue.Completed}/{entries.Count} connected. Remaining unsaved logins discarded.";
+            if (!closing) Status.Text = $"Sign-in queue finished: {loginQueue.Completed} connected, {loginQueue.Skipped} skipped, {entries.Count - loginQueue.Completed - loginQueue.Skipped} not completed. Unsaved logins discarded.";
         }
         catch (Exception ex) { if (!closing) { Status.Text = Security.Friendly(ex); MessageBox.Show(this, Security.Friendly(ex), "Sign-in queue"); } }
         finally { if (!closing) AddButton.Content = "+  Add account ▾"; addition = null; }
@@ -266,6 +316,7 @@ public partial class MainWindow : Window
         if (BrowserCodeActive || loginQueue.IsRunning) { Status.Text = "Finish or stop the current queue first."; return; }
         try
         {
+            SavePendingNotes();
             var selected = SelectedMany();
             var window = new BrowserCodeWindow(this, selected, browsers, () =>
                 busy || closing || loginQueue.IsRunning ? "Finish the current account operation first." :
@@ -429,7 +480,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.4.1\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.5.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

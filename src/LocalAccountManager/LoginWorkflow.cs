@@ -4,24 +4,26 @@ using System.Text.RegularExpressions;
 namespace LocalAccountManager;
 
 // Deliberately redacted ToString: these objects must never leak into diagnostic output.
-public sealed class LoginCredential(string username, string password, string? group = null) : IDisposable
+public sealed class LoginCredential(string username, string password, string? group = null, string? notes = null) : IDisposable
 {
     public string Username { get; } = username;
     public string Password { get; private set; } = password;
     public string? Group { get; } = group;
+    public string? Notes { get; private set; } = notes;
     public override string ToString() => "LoginCredential [redacted]";
-    public void Dispose() => Password = "";
+    public void Dispose() { Password = ""; Notes = null; }
 }
 
 public static class LoginInput
 {
-    public static LoginCredential Create(string username, string password, string? group = null)
+    public static LoginCredential Create(string username, string password, string? group = null, string? notes = null)
     {
         username = username.Trim(); group = string.IsNullOrWhiteSpace(group) ? null : group.Trim();
         if (!Regex.IsMatch(username, @"^[a-zA-Z0-9_]{1,20}$") || password.Length is < 1 or > 1024 || password.Any(char.IsControl))
             throw new UserError("Enter a Roblox username and a password of 1–1024 characters.");
         if (group is not null && (group.Length > 80 || group.Any(char.IsControl))) throw new UserError("Local group names must be at most 80 characters without control characters.");
-        return new(username, password, group);
+        if (notes is not null && (notes.Length > 4000 || notes.Contains('\0'))) throw new UserError("Notes must be at most 4,000 characters without null characters.");
+        return new(username, password, group, notes);
     }
 
     public static List<LoginCredential> Parse(string text, bool groupColumn = true)
@@ -37,13 +39,13 @@ public static class LoginInput
                 string line = lines[i];
                 if (string.IsNullOrWhiteSpace(line)) continue;
                 int split = line.IndexOf(';');
-                if (split < 0) throw new UserError($"Line {i + 1}: use username;password;group (group optional).");
+                if (split < 0) throw new UserError($"Line {i + 1}: use username;password;group;\"Note\" (group and note optional).");
                 LoginCredential credential;
                 try
                 {
                     var fields = groupColumn ? Fields(line) : [line[..split], line[(split + 1)..]];
-                    if (fields.Count is < 2 or > 3) throw new UserError("Use two or three fields; quote passwords containing semicolons, or select the legacy format.");
-                    credential = Create(fields[0], fields[1], fields.Count == 3 ? fields[2] : null);
+                    if (fields.Count is < 2 or > 4) throw new UserError("Use two to four fields; quote values containing semicolons, or select the legacy password format.");
+                    credential = Create(fields[0], fields[1], fields.Count >= 3 ? fields[2] : null, fields.Count == 4 ? fields[3] : null);
                 }
                 catch (UserError ex) { throw new UserError($"Line {i + 1}: {ex.Message}"); }
                 if (!names.Add(credential.Username)) { credential.Dispose(); throw new UserError($"Line {i + 1}: this username is listed more than once."); }
@@ -132,20 +134,21 @@ public sealed class AccountEnrollment(AppState state, Action save)
         if (staged && Credential is not null && !Credential.Username.Equals(identity.Name, StringComparison.OrdinalIgnoreCase))
             throw new UserError("The signed-in username does not match the queued account. Sign in to @" + Credential.Username + ".");
         if (state.Accounts.Any(a => a.Id != account.Id && a.UserId == identity.Id)) throw new UserError("This Roblox account is already in the account list.");
-        var old = (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group);
+        var old = (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group, account.Notes);
         account.UserId = identity.Id; account.Username = identity.Name; account.DisplayName = identity.DisplayName;
         account.SessionCookie = cookie;
         if (staged && Credential is not null && saveCredential)
         {
             account.SavedPassword = Credential.Password;
             if (Credential.Group is not null) account.Group = Credential.Group;
+            if (Credential.Notes is not null) account.Notes = Credential.Notes;
         }
         if (!saved) state.Accounts.Add(account);
         try { save(); }
         catch
         {
             if (!saved) state.Accounts.Remove(account);
-            (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group) = old;
+            (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group, account.Notes) = old;
             throw;
         }
         account.SessionStatus = "Valid session"; account.SessionCheckedAt = DateTimeOffset.UtcNow;
@@ -159,21 +162,26 @@ public sealed class AccountEnrollment(AppState state, Action save)
         a.SavedPassword.Length == 0 && a.SessionCookie.Length == 0);
 }
 
+public enum LoginOutcome { Connected, Skipped, Stopped }
+
 public sealed class LoginQueue
 {
     public bool IsRunning { get; private set; }
     public int Completed { get; private set; }
-    public async Task Run(IReadOnlyList<LoginCredential?> entries, Func<LoginCredential?, int, Task<bool>> login)
+    public int Skipped { get; private set; }
+    public async Task Run(IReadOnlyList<LoginCredential?> entries, Func<LoginCredential?, int, Task<LoginOutcome>> login)
     {
         if (IsRunning) throw new UserError("A sign-in queue is already running.");
-        IsRunning = true; Completed = 0;
+        IsRunning = true; Completed = 0; Skipped = 0;
         try
         {
             for (int i = 0; i < entries.Count; i++)
             {
-                if (!await login(entries[i], i)) break;
-                Completed++;
+                var outcome = await login(entries[i], i);
                 entries[i]?.Dispose();
+                if (outcome == LoginOutcome.Stopped) break;
+                if (outcome == LoginOutcome.Connected) Completed++;
+                else if (outcome == LoginOutcome.Skipped) Skipped++;
             }
         }
         finally { foreach (var entry in entries) entry?.Dispose(); IsRunning = false; }

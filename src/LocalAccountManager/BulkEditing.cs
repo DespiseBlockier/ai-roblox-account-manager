@@ -8,6 +8,15 @@ public sealed record BulkPreview(Account Account, string Group, string Alias, st
 
 public static class BulkEditing
 {
+    public static void ApplyNotes(IReadOnlyList<Account> accounts, IReadOnlyDictionary<Guid, string> notes, Action save)
+    {
+        var changes = accounts.Where(a => notes.ContainsKey(a.Id)).Select(a => (Account: a, Old: a.Notes, Next: notes[a.Id])).ToList();
+        if (changes.Any(c => c.Next.Length > 4000 || c.Next.Contains('\0'))) throw new UserError("Notes must be at most 4,000 characters without null characters.");
+        foreach (var change in changes) change.Account.Notes = change.Next;
+        try { if (changes.Count > 0) save(); }
+        catch { foreach (var change in changes) change.Account.Notes = change.Old; throw; }
+    }
+
     public static List<BulkPreview> Preview(IReadOnlyList<Account> accounts, BulkChanges changes)
     {
         if (accounts.Count == 0) throw new UserError("Select accounts to edit.");

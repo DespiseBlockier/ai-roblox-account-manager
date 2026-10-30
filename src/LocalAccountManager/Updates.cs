@@ -14,7 +14,7 @@ public sealed record UpdateManifest(
     [property: JsonPropertyName("fileName")] string FileName,
     [property: JsonPropertyName("size")] long Size,
     [property: JsonPropertyName("sha256")] string Sha256);
-public sealed record SignedUpdate(UpdateManifest Manifest, byte[] Bytes, byte[] Signature);
+public sealed record SignedUpdate(UpdateManifest Manifest, byte[] Bytes, byte[] Signature, string ReleaseNotes = "");
 
 public static class UpdateTrust
 {
@@ -84,7 +84,9 @@ public sealed class UpdateClient : IDisposable
         if (UpdateTrust.ParseVersion(version) <= UpdateTrust.ParseVersion(currentVersion)) return null;
         byte[] bytes = await Bytes(UpdateTrust.AssetUrl(version, "update-manifest.json"), 4096, timeout.Token);
         byte[] signature = await Bytes(UpdateTrust.AssetUrl(version, "update-manifest.sig"), 64, timeout.Token);
-        return UpdateTrust.Verify(bytes, signature, version, publicKey);
+        string notes = root.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String ? body.GetString() ?? "" : "";
+        if (notes.Length > 20000) notes = notes[..20000] + "\n\n(Release log truncated.)";
+        return UpdateTrust.Verify(bytes, signature, version, publicKey) with { ReleaseNotes = notes };
     }
     public async Task<string> PrepareAsync(SignedUpdate update, string appRoot, IProgress<double>? progress = null, CancellationToken cancel = default)
     {

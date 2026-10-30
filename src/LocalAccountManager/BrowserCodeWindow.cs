@@ -37,6 +37,7 @@ public sealed class BrowserCodeWindow : Window
     private readonly BrowserHub browsers;
     private readonly Func<string?> canStart;
     private long? generatedGroupId;
+    private BrowserCodeHelpWindow? docs;
     public bool IsRunning { get; private set; }
     public bool WasClosed { get; private set; }
     public event EventHandler? QueueEnded;
@@ -55,7 +56,16 @@ public sealed class BrowserCodeWindow : Window
         root.RowDefinitions.Add(new() { Height = new GridLength(150) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var header = new StackPanel();
-        header.Children.Add(new TextBlock { Text = "Run browser JavaScript across " + accounts.Count + " selected account(s)", FontSize = 22, FontWeight = FontWeights.SemiBold });
+        var titleLine = new DockPanel();
+        var help = new Button { Name = "JavaScriptDocsButton", Content = "JS docs · ram helpers", Margin = new Thickness(12, 0, 0, 0) };
+        help.Click += (_, _) =>
+        {
+            if (docs is not null) { docs.Activate(); return; }
+            docs = new BrowserCodeHelpWindow(this); docs.Closed += (_, _) => docs = null; docs.Show();
+        };
+        DockPanel.SetDock(help, Dock.Right); titleLine.Children.Add(help);
+        titleLine.Children.Add(new TextBlock { Text = "JavaScript · " + accounts.Count + " selected account(s)", FontSize = 22, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        header.Children.Add(titleLine);
         header.Children.Add(new TextBlock { Text = "ram.done() closes the current browser and advances. ram.stop() closes it and stops the queue. Closing a browser also stops the queue.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 10) });
         header.Children.Add(new TextBlock { Text = "Starting Roblox URL", Margin = new Thickness(0, 0, 0, 5) }); header.Children.Add(url);
         header.Children.Add(new TextBlock { Text = "Group/community ID or link · example generator", Margin = new Thickness(0, 12, 0, 0) });
@@ -91,7 +101,7 @@ public sealed class BrowserCodeWindow : Window
         start.Click += async (_, _) => await Run();
         stop.Click += (_, _) => { cancellation?.Cancel(); feedback.Text = "Stopping the current browser and queue…"; };
         Closing += (_, _) => cancellation?.Cancel();
-        Closed += (_, _) => { WasClosed = true; code.Clear(); };
+        Closed += (_, _) => { WasClosed = true; docs?.Close(); code.Clear(); };
     }
 
     private async Task Run()
