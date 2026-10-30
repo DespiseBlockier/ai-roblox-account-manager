@@ -26,7 +26,7 @@ public sealed partial class AccountBrowser
         try
         {
             await Ready.WaitAsync(token);
-            WindowState = WindowState.Normal; Show(); Activate();
+            ShowForUser();
             Title = "Browser code · @" + account.Username;
             Report("Loading the requested Roblox page…");
             await LoadCodePage(request.Url, token);

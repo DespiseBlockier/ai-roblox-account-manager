@@ -12,7 +12,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.0/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.0-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.1/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.1-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password** of at least 12 characters (recommended). With password protection, your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Protected vaults require that password each launch. Keep it safe; the app cannot recover it.
 
@@ -26,7 +26,7 @@ The release targets **Windows x64** and includes the .NET runtime. [Microsoft Ed
 
 1. Click **Add account ▾** and choose **Browser login**, **Username and password**, or **Bulk username;password;group;note**.
 2. For a bulk queue, enter `username;password;group;"Note"` per line. The note is optional; for example, `account_one;password_here;Alts;"Group payouts"`. Quote fields containing semicolons and double any quote inside a quoted field: `account_one;password_here;Alts;"Note; with ""quotes"""`. A missing fourth field preserves an existing note; an explicit empty fourth field clears it after verified login. To supply only a note, leave the group field blank: `account_one;password_here;;"Note"`. Notes are limited to 4,000 characters; each bulk account occupies one line. The group is optional and is a **local account-manager group**, not a Roblox community. Missing/blank groups preserve an existing account's group; new accounts use Default. For example: `account_one;password_here;Farm`. Quote passwords containing semicolons: `account_one;"pass;word";Farm`. Within quoted fields, `""` represents a quote. Select the legacy format to treat everything after the first separator as the password. Single-account import has separate optional group and note fields. The batch limit is 500 unique usernames.
-3. Each queued account opens the actual `https://www.roblox.com/login` page. Provided credentials are filled automatically. Click **Log In** and complete Roblox verification yourself. A verified session is detected automatically and the next queued account opens. **Connect account** remains available as a manual retry. Bulk login browsers also have **Skip account →**: it closes and discards that pending login, then advances. Skips are counted separately from connected accounts; skipping the last entry finishes the queue. Closing the browser normally still stops the entire queue.
+3. Each single or bulk sign-in browser opens restored and focused in the foreground. Each queued account opens the actual `https://www.roblox.com/login` page. Provided credentials are filled automatically. Click **Log In** and complete Roblox verification yourself. A verified session is detected automatically and the next queued account opens. **Connect account** remains available as a manual retry. Bulk login browsers also have **Skip account →**: it closes and discards that pending login, then advances. Skips are counted separately from connected accounts; skipping the last entry finishes the queue. Closing the browser normally still stops the entire queue.
 4. A new account row and its credentials are saved only after Roblox confirms the intended username. Closing the sign-in browser stops the queue and discards remaining unsaved logins. Successfully connected accounts stay saved. Repeated Add clicks resume the current login instead of adding placeholders. Old default placeholders from v1.0 are removed on startup.
 5. Select an account, enter a place ID or game link, and click **Join server**. Roblox must already be installed. A launch request is not proof that the player successfully joined. Each account has its own browser profile, separate from your regular browser.
 
@@ -86,7 +86,7 @@ Versions before 1.4.0 need one manual download to get this updater. The app is u
 
 ## Build from source
 
-Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.0` and `releases/RobloxAccountManager-1.5.0-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
+Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.1` and `releases/RobloxAccountManager-1.5.1-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
 
 The extracted app contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (this guide, licenses, and the browser-code example). Native runtime components use the standard per-user .NET temporary cache. Your account data stays in Data beside the EXE.
 

@@ -13,13 +13,13 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
     private Task<CoreWebView2Environment>? environment;
     public int Count => browsers.Count;
 
-    public async Task<AccountBrowser> Open(Account account, string url = "https://www.roblox.com/home", bool visible = true)
+    public async Task<AccountBrowser> Open(Account account, string url = "https://www.roblox.com/home", bool visible = true, bool navigate = true)
     {
         if (!Security.IsBrowserPage(url)) throw new UserError("Only the Roblox website can be opened in an account browser.");
         if (browsers.TryGetValue(account.Id, out var current))
         {
             await current.Ready;
-            if (visible) { current.WindowState = WindowState.Normal; current.Show(); current.Activate(); current.Navigate(url); }
+            if (visible) { current.ShowForUser(); if (navigate) current.Navigate(url); }
             return current;
         }
         environment ??= CoreWebView2Environment.CreateAsync(null, vault.BrowserRoot, new CoreWebView2EnvironmentOptions
@@ -31,7 +31,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         if (browsers.TryGetValue(account.Id, out current))
         {
             await current.Ready;
-            if (visible) { current.WindowState = WindowState.Normal; current.Show(); current.Activate(); current.Navigate(url); }
+            if (visible) { current.ShowForUser(); if (navigate) current.Navigate(url); }
             return current;
         }
         var browser = new AccountBrowser(account, env, api, onIdentity);
@@ -39,10 +39,14 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         browser.Closed += (_, _) => browsers.Remove(account.Id);
         // WPF initializes WebView2 after Loaded. A helper starts minimized without taking focus,
         // then hides after initialization; it never navigates to a web page.
-        browser.ShowActivated = visible;
-        if (!visible) browser.WindowState = WindowState.Minimized;
-        browser.Show();
-        try { await browser.Initialize(); await browser.RestoreSession(account.SessionCookie); if (visible) browser.Navigate(url); else browser.Hide(); }
+        if (visible) browser.ShowForUser();
+        else { browser.ShowActivated = false; browser.WindowState = WindowState.Minimized; browser.Show(); }
+        try
+        {
+            await browser.Initialize(); await browser.RestoreSession(account.SessionCookie);
+            if (visible) { browser.ShowForUser(); if (navigate) browser.Navigate(url); }
+            else if (!browser.ShownForUser) browser.Hide();
+        }
         catch { browser.Close(); throw; }
         return browser;
     }
@@ -105,6 +109,7 @@ public sealed partial class AccountBrowser : Window
     private bool loginAbandoned;
     private readonly CancellationTokenSource closedCancellation = new();
     public bool IsClosed => disposed;
+    public bool ShownForUser { get; private set; }
 
     public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity)
     {
@@ -192,6 +197,18 @@ public sealed partial class AccountBrowser : Window
         if (!disposed && web.CoreWebView2 is not null && Security.IsBrowserPage(url)) web.CoreWebView2.Navigate(url);
     }
 
+    public void ShowForUser()
+    {
+        if (disposed) return;
+        ShownForUser = true;
+        ShowActivated = true;
+        Show();
+        // Restore after Show: a hidden helper may retain its minimized native-window state.
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        if (ready.Task.IsCompletedSuccessfully) web.Focus();
+    }
+
     public async Task<string> ReadSession()
     {
         if (disposed) throw new UserError("The account browser was closed. Open it again.");
@@ -241,7 +258,7 @@ public sealed partial class AccountBrowser : Window
         skipLogin.Visibility = allowSkip ? Visibility.Visible : Visibility.Collapsed;
         Title = "Roblox sign in · " + progress;
         status.Text = progress + " · Complete the Roblox login." + (allowSkip ? " Skip account moves to the next login without saving this one." : "") + " Close this browser to stop the queue.";
-        WindowState = WindowState.Normal; Show(); Activate();
+        ShowForUser();
         Navigate("https://www.roblox.com/login"); loginTimer.Start();
     }
 
