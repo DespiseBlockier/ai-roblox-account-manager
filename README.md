@@ -6,7 +6,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.4.0/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.4.0-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.4.1/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.4.1-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password** of at least 12 characters (recommended). With password protection, your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Protected vaults require that password each launch. Keep it safe; the app cannot recover it.
 
@@ -78,7 +78,7 @@ Versions before 1.4.0 need one manual download to get this updater. The app is u
 
 ## Build from source
 
-Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.4.0` and `releases/RobloxAccountManager-1.4.0-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
+Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.4.1` and `releases/RobloxAccountManager-1.4.1-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
 
 The extracted app contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (this guide, licenses, and the browser-code example). Native runtime components use the standard per-user .NET temporary cache. Your account data stays in Data beside the EXE.
 

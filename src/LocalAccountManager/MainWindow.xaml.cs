@@ -251,7 +251,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true)
         {
             string oldPassword = account.SavedPassword; account.SavedPassword = dialog.TakePassword();
-            try { SaveRefresh("Saved password updated in the encrypted vault."); }
+            try { SaveRefresh("Saved password updated using the current vault protection setting."); }
             catch { account.SavedPassword = oldPassword; throw; }
         }
         return Task.CompletedTask;
@@ -429,7 +429,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.4.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.4.1\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nYou complete Roblox login and verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>
