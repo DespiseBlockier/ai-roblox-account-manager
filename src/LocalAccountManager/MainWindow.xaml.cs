@@ -189,13 +189,12 @@ public partial class MainWindow : Window
         if (activeLoginBrowser is { IsClosed: false } browser) browser.ShowForUser();
     }
     private void ManualAdd_Click(object sender, RoutedEventArgs e) => StartAddition([null]);
-    private void SingleAdd_Click(object sender, RoutedEventArgs e) => AddCredentials(false);
-    private void BulkAdd_Click(object sender, RoutedEventArgs e) => AddCredentials(true);
-    private void AddCredentials(bool bulk)
+    private void BulkAdd_Click(object sender, RoutedEventArgs e) => AddCredentials();
+    private void AddCredentials()
     {
         if (loginQueue.IsRunning) { ResumeLogin(); return; }
-        var dialog = new LoginInputWindow(this, bulk, state.Accounts.Select(a => a.Group));
-        if (dialog.ShowDialog() == true) StartAddition(dialog.Credentials.Cast<LoginCredential?>().ToList(), allowSkip: bulk);
+        var dialog = new LoginInputWindow(this);
+        if (dialog.ShowDialog() == true) StartAddition(dialog.Credentials.Cast<LoginCredential?>().ToList(), allowSkip: true);
     }
 
     private void StartAddition(IReadOnlyList<LoginCredential?> entries, bool allowSkip = false)
@@ -211,6 +210,26 @@ public partial class MainWindow : Window
         {
             await loginQueue.Run(entries, async (credential, index) =>
             {
+                if (closing) return LoginOutcome.Stopped;
+                if (credential is { SessionCookie.Length: > 0 })
+                {
+                    Status.Text = $"Checking cookie {index + 1}/{entries.Count}…";
+                    try
+                    {
+                        var identity = await api.Identity(credential.SessionCookie).WaitAsync(updateCancel.Token);
+                        if (closing) return LoginOutcome.Stopped;
+                        using var resolved = new LoginCredential(identity.Name, "", credential.Group, credential.Notes, credential.SessionCookie);
+                        var imported = enrollment.BeginCookie(resolved, identity);
+                        try { enrollment.Commit(imported, identity, credential.SessionCookie); Refresh(); }
+                        finally { enrollment.Finish(); }
+                        browsers.CloseAccount(imported);
+                        return LoginOutcome.Connected;
+                    }
+                    catch (RobloxApiError ex) when (ex.StatusCode == 429)
+                    { Status.Text = "Roblox rate limited cookie sign-ins. The queue stopped."; return LoginOutcome.Stopped; }
+                    catch (Exception ex) when (ex is RobloxApiError or UserError)
+                    { Status.Text = "Cookie sign-in skipped. " + Security.Friendly(ex); return LoginOutcome.Skipped; }
+                }
                 var account = enrollment.Begin(credential);
                 AddButton.Content = $"Sign-in {index + 1}/{entries.Count} · Resume";
                 Status.Text = $"Sign-in queue {index + 1}/{entries.Count}. " + (allowSkip ? "Skip advances without saving; " : "") + "close its browser to stop.";
@@ -263,7 +282,7 @@ public partial class MainWindow : Window
         }
         return Task.CompletedTask;
     });
-    private async void Browser_Click(object sender, RoutedEventArgs e) => await Run(async () => { await browsers.Open(Selected()); Status.Text = "Account browser opened."; });
+    private async void Browser_Click(object sender, RoutedEventArgs e) => await Run(async () => { if (AccountsGrid.SelectedItem is Account selected) await browsers.Open(selected); else await browsers.OpenGuest(); Status.Text = "Browser opened."; });
     private async void Accounts_DoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     { if (AccountsGrid.SelectedItem is Account) await Run(async () => { await browsers.Open(Selected()); }); }
     private void BrowserCode_Click(object sender, RoutedEventArgs e)
@@ -274,7 +293,7 @@ public partial class MainWindow : Window
         try
         {
             SavePendingNotes();
-            var selected = SelectedMany();
+            var selected = AccountsGrid.SelectedItems.Cast<Account>().ToList();
             var window = new BrowserCodeWindow(this, selected, browsers, () =>
                 busy || closing || loginQueue.IsRunning ? "Finish the current account operation first." :
                 selected.Any(a => !state.Accounts.Contains(a)) ? "The selected accounts changed. Close this editor and select them again." : null);
@@ -439,7 +458,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => ThemedMessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.7.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection and authenticator unlock checks\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates, with optional automatic installation\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.8.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection and authenticator unlock checks\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates, with optional automatic installation\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

@@ -23,22 +23,23 @@ public static class GroupTarget
     public static string Url(long id) => "https://www.roblox.com/communities/" + Validate(id).ToString(CultureInfo.InvariantCulture);
 }
 
-public sealed record BrowserCodeRequest(string Url, string Code, TimeSpan Timeout, long? ConfirmGroupId = null)
+public sealed record BrowserCodeRequest(string Url, string Code, TimeSpan Timeout, long? ConfirmGroupId = null, bool Guest = false)
 {
     public BrowserCodeRequest Validate()
     {
-        if (!Security.IsBrowserPage(Url) || Url.Length > 4096 || Url.Any(char.IsControl) || LoginAutofill.IsLoginPage(Url))
-            throw new UserError("Choose a signed-in Roblox HTTPS page as the starting URL.");
+        if (!Security.IsBrowserPage(Url) || Url.Length > 4096 || Url.Any(char.IsControl) || !Guest && LoginAutofill.IsLoginPage(Url))
+            throw new UserError("Choose a Roblox HTTPS starting page. Login-page scripts require a guest browser.");
         if (string.IsNullOrWhiteSpace(Code) || Code.Length > 128_000 || Code.Contains('\0')) throw new UserError("Enter JavaScript code (up to 128,000 characters).");
         if (Timeout < TimeSpan.FromSeconds(1) || Timeout > TimeSpan.FromHours(2)) throw new UserError("Choose a timeout of up to 120 minutes per account.");
         if (ConfirmGroupId is long group) GroupTarget.Validate(group);
+        if (Guest && ConfirmGroupId is not null) throw new UserError("Select a saved account to confirm group membership.");
         return this with { Url = new Uri(Url).AbsoluteUri };
     }
 }
 
 public enum BrowserCodeOutcome { Completed, Stopped, Failed }
 public sealed record BrowserCodeResult(BrowserCodeOutcome Outcome, string Message);
-public sealed record BrowserCodeState(string Phase, string Message);
+public sealed record BrowserCodeState(string Phase, string Message, List<SolverRequest>? Requests = null);
 
 public static class BrowserCodeRuntime
 {
@@ -49,15 +50,15 @@ public static class BrowserCodeRuntime
         return JsonSerializer.Serialize(key);
     }
 
-    public static string Install(string key, Account account, string code)
+    public static string Install(string key, Account account, string code, bool guest = false)
     {
         // Only account identity is passed to JavaScript. Never include passwords, cookies, or native objects.
-        string identity = JsonSerializer.Serialize(new { userId = account.UserId.ToString(CultureInfo.InvariantCulture), username = account.Username });
+        string identity = guest ? "null" : JsonSerializer.Serialize(new { userId = account.UserId.ToString(CultureInfo.InvariantCulture), username = account.Username });
         return """
             (() => {
               if (location.protocol !== 'https:' || !['www.roblox.com','roblox.com'].includes(location.hostname) ||
-                  (location.port && location.port !== '443') || location.pathname.replace(/\/$/, '').toLowerCase() === '/login') return null;
-            """ + "\nconst key = " + Key(key) + ";\nconst identity = " + identity + ";\n" + """
+                  (location.port && location.port !== '443')) return null;
+            """ + "\nif (" + (guest ? "false" : "true") + " && location.pathname.replace(/\\/$/, '').toLowerCase() === '/login') return null;\nconst key = " + Key(key) + ";\nconst identity = " + identity + ";\n" + """
               const abort = new AbortController();
               let phase = 'running', message = 'Code is running.';
               const text = value => String(value ?? '').slice(0, 2000);
@@ -65,8 +66,12 @@ public static class BrowserCodeRuntime
                 if (phase === 'done' || phase === 'stopped' || phase === 'failed') return;
                 phase = next; message = text(value);
               };
+            """ + "\n" + BrowserSolverRuntime.Source + "\n" + """
               const ram = Object.freeze({
-                account: Object.freeze(identity), signal: abort.signal,
+                account: identity === null ? null : Object.freeze(identity), signal: abort.signal,
+                capsolver: Object.freeze({register: (key, options) => registerSolver('capsolver', key, options)}),
+                solvex: Object.freeze({register: (key, options) => registerSolver('solvex', key, options)}),
+                fetchcaptcha: fetchCaptcha, featchcaptcha: fetchCaptcha,
                 status: value => { if (phase === 'running' || phase === 'waiting') message = text(value); },
                 done: () => { finish('done', 'Code requested completion.'); abort.abort(); },
                 stop: value => { finish('stopped', value || 'Code stopped the queue.'); abort.abort(); },
@@ -78,7 +83,8 @@ public static class BrowserCodeRuntime
                 })
               });
               Object.defineProperty(window, key, {configurable:true, enumerable:false, value:Object.freeze({
-                snapshot: () => ({phase, message}),
+                snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4)}),
+                reply: (id, result) => { const call = solverPending.get(id); if (call) { solverPending.delete(id); call.resolve(result); } },
                 stop: () => { abort.abort(); finish('stopped', 'Stopped'); }
               })});
               setTimeout(async () => {
@@ -98,9 +104,14 @@ public static class BrowserCodeRuntime
 
     public static string Read(string key) => "(() => { const run = window[" + Key(key) + "]; return run ? run.snapshot() : null; })();";
     public static string Stop(string key) => "(() => { const run = window[" + Key(key) + "]; if (run) run.stop(); })();";
+    public static string Reply(string key, int id, object response)
+    {
+        if (id < 1) throw new UserError("Invalid solver request identifier.");
+        return "window[" + Key(key) + "]?.reply(" + id.ToString(CultureInfo.InvariantCulture) + "," + JsonSerializer.Serialize(response) + ");";
+    }
     public static BrowserCodeState Parse(string json)
     {
-        if (json.Length > 16_384) throw new UserError("Browser code returned too much status data.");
+        if (json.Length > 280_000) throw new UserError("Browser code returned too much status data.");
         try
         {
             using var doc = JsonDocument.Parse(json);
@@ -109,7 +120,14 @@ public static class BrowserCodeRuntime
             if (phase is not ("running" or "waiting" or "done" or "stopped" or "failed")) throw new UserError("Invalid browser-code status.");
             string message = doc.RootElement.GetProperty("message").GetString() ?? "";
             if (message.Length > 2000) message = message[..2000];
-            return new(phase, message);
+            List<SolverRequest>? requests = null;
+            if (doc.RootElement.TryGetProperty("requests", out var pending))
+            {
+                if (pending.ValueKind != JsonValueKind.Array || pending.GetArrayLength() > 4) throw new UserError("Too many solver requests.");
+                requests = JsonSerializer.Deserialize<List<SolverRequest>>(pending.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (requests?.Any(r => r is null || r.Id < 1) == true) throw new UserError("Invalid solver request.");
+            }
+            return new(phase, message, requests);
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
         { throw new UserError("Could not read browser-code status. The queue stopped."); }
@@ -124,6 +142,7 @@ public static class BrowserCodeRuntime
     }
 
     public const string Starter = "// Runs once for each selected account.\nram.status('Opened @' + ram.account.username);\nawait ram.sleep(1000);\nram.done(); // Close this browser and move to the next account.\n";
+    public const string GuestStarter = "// Runs once in a fresh private browser. ram.account is null.\nram.status('Guest browser ready');\nawait ram.sleep(1000);\nram.done(); // Close the guest browser.\n";
 }
 
 public sealed class BrowserCodeQueue

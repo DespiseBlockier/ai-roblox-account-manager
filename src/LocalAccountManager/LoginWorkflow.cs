@@ -4,18 +4,61 @@ using System.Text.RegularExpressions;
 namespace LocalAccountManager;
 
 // Deliberately redacted ToString: these objects must never leak into diagnostic output.
-public sealed class LoginCredential(string username, string password, string? group = null, string? notes = null) : IDisposable
+public sealed class LoginCredential(string username, string password, string? group = null, string? notes = null, string sessionCookie = "") : IDisposable
 {
     public string Username { get; } = username;
     public string Password { get; private set; } = password;
     public string? Group { get; } = group;
     public string? Notes { get; private set; } = notes;
+    public string SessionCookie { get; private set; } = sessionCookie;
     public override string ToString() => "LoginCredential [redacted]";
-    public void Dispose() { Password = ""; Notes = null; }
+    public void Dispose() { Password = ""; Notes = null; SessionCookie = ""; }
 }
+
+public enum BulkLoginFormat { CredentialsWithMetadata, Credentials, Cookies }
 
 public static class LoginInput
 {
+    public static List<LoginCredential> ParseBulk(string text, BulkLoginFormat format)
+    {
+        if (!Enum.IsDefined(format) || text.Length > 512_000) throw new UserError("Choose a valid format and add at most 500 accounts at a time.");
+        var entries = new List<LoginCredential>(); var unique = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            int number = 0;
+            foreach (string raw in text.Replace("\r\n", "\n").Split('\n'))
+            {
+                number++; if (string.IsNullOrWhiteSpace(raw)) continue;
+                try
+                {
+                    LoginCredential entry;
+                    if (format == BulkLoginFormat.Cookies)
+                    {
+                        string cookie = raw.Trim();
+                        if (cookie.StartsWith(".ROBLOSECURITY=", StringComparison.OrdinalIgnoreCase)) cookie = cookie[15..].TrimEnd(';');
+                        if (cookie.Length is < 1 or > 20000 || cookie.Any(c => char.IsWhiteSpace(c) || c == ';')) throw new UserError("Enter one raw .ROBLOSECURITY cookie per line, without other cookies or headers.");
+                        entry = new LoginCredential("", "", sessionCookie: cookie);
+                    }
+                    else
+                    {
+                        int colon = raw.IndexOf(':');
+                        if (colon < 1) throw new UserError("Use username:password;group;\"Note\" or select the username:password format.");
+                        var fields = format == BulkLoginFormat.Credentials ? new List<string> { raw[..colon], raw[(colon + 1)..] } : Fields(raw[..colon] + ";" + raw[(colon + 1)..]);
+                        if (fields.Count is < 2 or > 4) throw new UserError("Use username:password;group;\"Note\". Quote fields containing semicolons.");
+                        entry = Create(fields[0], fields[1], fields.Count >= 3 ? fields[2] : null, fields.Count == 4 ? fields[3] : null);
+                    }
+                    string id = format == BulkLoginFormat.Cookies ? entry.SessionCookie : entry.Username.ToUpperInvariant();
+                    if (!unique.Add(id)) { entry.Dispose(); throw new UserError("This account or cookie is listed more than once."); }
+                    entries.Add(entry);
+                }
+                catch (UserError ex) { throw new UserError($"Line {number}: {ex.Message}"); }
+                if (entries.Count > 500) throw new UserError("Add at most 500 accounts at a time.");
+            }
+            if (entries.Count == 0) throw new UserError("Enter at least one account or cookie.");
+            return entries;
+        }
+        catch { foreach (var entry in entries) entry.Dispose(); throw; }
+    }
     public static LoginCredential Create(string username, string password, string? group = null, string? notes = null)
     {
         username = username.Trim(); group = string.IsNullOrWhiteSpace(group) ? null : group.Trim();
@@ -160,6 +203,15 @@ public sealed class AccountEnrollment(AppState state, Action save)
         return Current;
     }
 
+    public Account BeginCookie(LoginCredential credential, RobloxIdentity identity)
+    {
+        if (Current is not null) throw new UserError("Finish the current sign-in first.");
+        if (credential.SessionCookie.Length == 0 || identity.Id <= 0 || !credential.Username.Equals(identity.Name, StringComparison.OrdinalIgnoreCase)) throw new UserError("Verify the cookie identity before saving it.");
+        Credential = credential; Committed = false;
+        Current = state.Accounts.FirstOrDefault(a => a.UserId == identity.Id) ?? new Account { Username = identity.Name, DisplayName = identity.DisplayName };
+        return Current;
+    }
+
     public void Commit(Account account, RobloxIdentity identity, string cookie, bool saveCredential = true)
     {
         bool staged = ReferenceEquals(Current, account);
@@ -169,12 +221,13 @@ public sealed class AccountEnrollment(AppState state, Action save)
         if (staged && Credential is not null && !Credential.Username.Equals(identity.Name, StringComparison.OrdinalIgnoreCase))
             throw new UserError("The signed-in username does not match the queued account. Sign in to @" + Credential.Username + ".");
         if (state.Accounts.Any(a => a.Id != account.Id && a.UserId == identity.Id)) throw new UserError("This Roblox account is already in the account list.");
-        var old = (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group, account.Notes);
+        var old = (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group, account.Notes, account.SessionNeedsRestore);
         account.UserId = identity.Id; account.Username = identity.Name; account.DisplayName = identity.DisplayName;
         account.SessionCookie = cookie;
         if (staged && Credential is not null && saveCredential)
         {
-            account.SavedPassword = Credential.Password;
+            account.SessionNeedsRestore = Credential.SessionCookie.Length > 0;
+            if (Credential.SessionCookie.Length == 0) account.SavedPassword = Credential.Password;
             if (Credential.Group is not null) account.Group = Credential.Group;
             if (Credential.Notes is not null) account.Notes = Credential.Notes;
         }
@@ -183,7 +236,7 @@ public sealed class AccountEnrollment(AppState state, Action save)
         catch
         {
             if (!saved) state.Accounts.Remove(account);
-            (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group, account.Notes) = old;
+            (account.UserId, account.Username, account.DisplayName, account.SavedPassword, account.SessionCookie, account.Group, account.Notes, account.SessionNeedsRestore) = old;
             throw;
         }
         account.SessionStatus = "Valid session"; account.SessionCheckedAt = DateTimeOffset.UtcNow;

@@ -10,13 +10,26 @@ public sealed partial class AccountBrowser
 
     public async Task<BrowserCodeResult> RunCode(BrowserCodeRequest request, Action<string> progress, CancellationToken cancellationToken)
     {
-        request = request.Validate();
+        request = (request with { Guest = IsGuest }).Validate();
         if (disposed || loginMode || IsCodeRunning) throw new UserError("Finish the current browser operation before running code.");
         IsCodeRunning = true;
         using var deadline = new CancellationTokenSource(request.Timeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token, closedCancellation.Token);
         CancellationToken token = linked.Token;
         string key = BrowserCodeRuntime.NewKey();
+        using var solvers = new BrowserSolverClient();
+        var solverJobs = new List<Task>();
+        var solverIds = new HashSet<int>();
+        async Task Solve(SolverRequest call)
+        {
+            try
+            {
+                object result = await solvers.Execute(call, token);
+                if (!disposed && !token.IsCancellationRequested) await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Reply(key, call.Id, result));
+            }
+            catch (OperationCanceledException) { }
+            catch { /* Navigation or close disposes the page and its pending callbacks. */ }
+        }
         string lastMessage = "";
         void Report(string message)
         {
@@ -27,12 +40,11 @@ public sealed partial class AccountBrowser
         {
             await Ready.WaitAsync(token);
             ShowForUser();
-            Title = "Browser code · @" + account.Username;
+            Title = IsGuest ? "Browser code · Guest" : "Browser code · @" + account.Username;
             Report("Loading the requested Roblox page…");
             await LoadCodePage(request.Url, token);
-            Report("Verifying the selected account before running code…");
-            await VerifyCodeIdentity(token);
-            string installed = await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Install(key, account, request.Code)).WaitAsync(TimeSpan.FromSeconds(5), token);
+            if (!IsGuest) { Report("Verifying the selected account before running code…"); await VerifyCodeIdentity(token); }
+            string installed = await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Install(key, account, request.Code, IsGuest)).WaitAsync(TimeSpan.FromSeconds(5), token);
             using (var json = JsonDocument.Parse(installed))
             {
                 if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("installed", out var ok) || ok.ValueKind != JsonValueKind.True)
@@ -42,15 +54,25 @@ public sealed partial class AccountBrowser
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                if (!Security.IsBrowserPage(web.CoreWebView2.Source) || LoginAutofill.IsLoginPage(web.CoreWebView2.Source))
+                if (!Security.IsBrowserPage(web.CoreWebView2.Source) || !IsGuest && LoginAutofill.IsLoginPage(web.CoreWebView2.Source))
                     throw new UserError("The browser left the signed-in Roblox page. The queue stopped.");
                 string raw = await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Read(key)).WaitAsync(TimeSpan.FromSeconds(5), token);
                 var state = BrowserCodeRuntime.Parse(raw);
+                solverJobs.RemoveAll(job => job.IsCompleted);
+                if (state.Requests is { Count: > 0 } calls)
+                {
+                    foreach (var call in calls)
+                    {
+                        if (solverJobs.Count >= 4 || !solverIds.Add(call.Id)) throw new UserError("Invalid or excessive solver requests. The queue stopped.");
+                        solverJobs.Add(Solve(call));
+                    }
+                }
                 if (state.Phase != "done" || request.ConfirmGroupId is null) Report(state.Message);
                 if (state.Phase == "stopped") return new(BrowserCodeOutcome.Stopped, state.Message);
                 if (state.Phase == "failed") return new(BrowserCodeOutcome.Failed, state.Message);
                 if (state.Phase == "done" && DateTimeOffset.UtcNow >= nextMembershipCheck)
                 {
+                    if (IsGuest) return new(BrowserCodeOutcome.Completed, "Guest code completed.");
                     string cookie = await VerifyCodeIdentity(token);
                     if (request.ConfirmGroupId is long group && !await api.IsGroupMember(cookie, account.UserId, group).WaitAsync(token))
                     {
@@ -76,6 +98,8 @@ public sealed partial class AccountBrowser
         }
         finally
         {
+            linked.Cancel();
+            try { await Task.WhenAll(solverJobs).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
             IsCodeRunning = false;
             if (!disposed)
             {

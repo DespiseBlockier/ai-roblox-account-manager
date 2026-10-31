@@ -17,6 +17,7 @@ public sealed class Account
     public string SavedJob { get; set; } = "";
     public string SavedPassword { get; set; } = "";
     public string SessionCookie { get; set; } = "";
+    public bool SessionNeedsRestore { get; set; }
     public string AgeGroup { get; set; } = "Unknown";
     public bool? IsAgeChecked { get; set; }
     public DateTimeOffset? AgeGroupCheckedAt { get; set; }

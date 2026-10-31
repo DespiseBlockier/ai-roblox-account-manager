@@ -12,8 +12,14 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
     private readonly Dictionary<Guid, AccountBrowser> browsers = [];
     private Task<CoreWebView2Environment>? environment;
     public int Count => browsers.Count;
+    public void CloseAccount(Account account)
+    {
+        if (browsers.TryGetValue(account.Id, out var browser)) browser.Close();
+    }
 
-    public async Task<AccountBrowser> Open(Account account, string url = "https://www.roblox.com/home", bool visible = true, bool navigate = true)
+    public Task<AccountBrowser> OpenGuest(string url = "https://www.roblox.com/home", bool visible = true, bool navigate = true) =>
+        Open(new Account { Username = "", DisplayName = "Guest" }, url, visible, navigate, guest: true);
+    public async Task<AccountBrowser> Open(Account account, string url = "https://www.roblox.com/home", bool visible = true, bool navigate = true, bool guest = false)
     {
         if (!Security.IsBrowserPage(url)) throw new UserError("Only the Roblox website can be opened in an account browser.");
         if (browsers.TryGetValue(account.Id, out var current))
@@ -34,7 +40,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
             if (visible) { current.ShowForUser(); if (navigate) current.Navigate(url); }
             return current;
         }
-        var browser = new AccountBrowser(account, env, api, onIdentity);
+        var browser = new AccountBrowser(account, env, api, onIdentity, guest);
         browsers.Add(account.Id, browser);
         browser.Closed += (_, _) => browsers.Remove(account.Id);
         // WPF initializes WebView2 after Loaded. A helper starts minimized without taking focus,
@@ -43,7 +49,13 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         else { browser.ShowActivated = false; browser.WindowState = WindowState.Minimized; browser.Show(); }
         try
         {
-            await browser.Initialize(); await browser.RestoreSession(account.SessionCookie);
+            await browser.Initialize();
+            if (!guest)
+            {
+                if (account.SessionNeedsRestore) await browser.ClearSession();
+                await browser.RestoreSession(account.SessionCookie);
+                account.SessionNeedsRestore = false;
+            }
             if (visible) { browser.ShowForUser(); if (navigate) browser.Navigate(url); }
             else if (!browser.ShownForUser) browser.Hide();
         }
@@ -157,16 +169,20 @@ public sealed partial class AccountBrowser : Window
     private readonly CancellationTokenSource closedCancellation = new();
     public bool IsClosed => disposed;
     public bool ShownForUser { get; private set; }
+    public bool IsGuest { get; }
 
-    public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity)
+    public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity, bool guest = false)
     {
         Style = (Style)FindResource(typeof(Window));
         this.account = account; this.environment = environment; this.api = api; this.onIdentity = onIdentity;
+        IsGuest = guest;
         Title = "Roblox · " + account.Username + " · Account browser";
+        if (guest) { Title = "Roblox · Guest browser"; status.Text = "Fresh private guest session. Sign-ins here are not saved to your account list."; }
         Width = 1160; Height = 820; MinWidth = 800; MinHeight = 600;
         var root = new DockPanel();
         var top = new DockPanel { Margin = new Thickness(12) };
         var connect = new Button { Content = "Connect account", Style = (Style)FindResource("Primary") };
+        if (guest) connect.Visibility = Visibility.Collapsed;
         connect.Click += async (_, _) => await Connect();
         DockPanel.SetDock(connect, Dock.Right); top.Children.Add(connect);
         skipLogin.Click += (_, _) => SkipLogin();
@@ -194,7 +210,7 @@ public sealed partial class AccountBrowser : Window
         {
             var options = environment.CreateCoreWebView2ControllerOptions();
             options.ProfileName = account.Id.ToString("N");
-            options.IsInPrivateModeEnabled = false;
+            options.IsInPrivateModeEnabled = IsGuest;
             await web.EnsureCoreWebView2Async(environment, options).WaitAsync(TimeSpan.FromSeconds(30));
             var core = web.CoreWebView2;
             core.Settings.AreHostObjectsAllowed = false;

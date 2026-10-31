@@ -1,6 +1,6 @@
 <Window x:Class="LocalAccountManager.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Roblox Account Manager · Local" Style="{StaticResource {x:Type Window}}" Width="1220" Height="800" MinWidth="1060" MinHeight="710" WindowStartupLocation="CenterScreen">
-  <Grid Margin="26,22,26,18">
+  <Grid Margin="26,22,26,18" PreviewMouseDown="Background_PreviewMouseDown">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,24">
       <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
@@ -14,14 +14,14 @@
       <TextBox x:Name="Search" TextChanged="Filter_Changed" ToolTip="Search username, alias, group, or notes" VerticalContentAlignment="Center" Margin="0,0,10,0" AutomationProperties.Name="Search accounts"/>
       <ComboBox x:Name="Groups" Grid.Column="1" SelectionChanged="Group_Changed" Margin="0,0,14,0" AutomationProperties.Name="Filter by group"/>
       <Button x:Name="AddButton" Grid.Column="2" Content="+  Add account ▾" Style="{StaticResource Primary}" Click="Add_Click" Margin="0">
-        <Button.ContextMenu><ContextMenu><MenuItem Header="Browser login" Click="ManualAdd_Click"/><MenuItem Header="Username and password…" Click="SingleAdd_Click"/><MenuItem Header="Bulk username;password;group;note…" Click="BulkAdd_Click"/></ContextMenu></Button.ContextMenu>
+        <Button.ContextMenu><ContextMenu><MenuItem Header="Browser login" Click="ManualAdd_Click"/><MenuItem Header="Bulk sign in…" Click="BulkAdd_Click"/></ContextMenu></Button.ContextMenu>
       </Button>
     </Grid>
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="322"/></Grid.ColumnDefinitions>
       <Border Background="{StaticResource Surface}" CornerRadius="10" BorderBrush="#2A313E" BorderThickness="1" Padding="1">
         <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <DockPanel Margin="15,13"><TextBlock x:Name="CountLabel" FontWeight="SemiBold" VerticalAlignment="Center"/><CheckBox x:Name="StarredOnly" Content="Favorites only" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0" Checked="FavoriteFilter_Changed" Unchecked="FavoriteFilter_Changed"/></DockPanel>
+          <DockPanel Margin="15,13"><StackPanel Orientation="Horizontal"><TextBlock x:Name="CountLabel" FontWeight="SemiBold" VerticalAlignment="Center"/><Button x:Name="ClearSelectionButton" Content="Clear selection" Click="ClearSelection_Click" Padding="7,3" FontSize="11" Margin="10,0,0,0"/></StackPanel><CheckBox x:Name="StarredOnly" Content="Favorites only" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0" Checked="FavoriteFilter_Changed" Unchecked="FavoriteFilter_Changed"/></DockPanel>
           <Grid Grid.Row="1">
             <DataGrid x:Name="AccountsGrid" RowHeight="78" SelectionChanged="Accounts_Changed" MouseDoubleClick="Accounts_DoubleClick">
               <DataGrid.RowStyle><Style TargetType="DataGridRow"><Style.Triggers>
@@ -63,7 +63,7 @@
             <Button Content="▶   Join server" Style="{StaticResource Primary}" Click="Join_Click" Margin="0,16,0,8" Padding="12,11"/>
             <UniformGrid Columns="2"><Button Content="Open browser" Click="Browser_Click"/><Button x:Name="CheckStatusButton" Content="Check status" Click="Check_Click" Margin="0" ToolTip="Check the selected accounts' sessions, ban status, and age groups."/></UniformGrid>
             <Button Content="Sign in · use saved login" Click="SignIn_Click" Margin="0,8,0,0" ToolTip="Fills the saved username and password and presses Log In once. Complete any verification on Roblox."/>
-            <Button Content="Open browser with code…" Click="BrowserCode_Click" Margin="0,8,0,0" ToolTip="Run JavaScript sequentially for the selected accounts, or generate the group-join example."/>
+            <Button Content="Open browser with code…" Click="BrowserCode_Click" Margin="0,8,0,0" ToolTip="Run code for selected accounts, or use a fresh guest browser when no account is selected."/>
             <UniformGrid Columns="2" Margin="0,8,0,0"><Button Content="Server list" Click="Servers_Click"/><Button Content="Save target" Click="SaveTarget_Click" Margin="0"/></UniformGrid>
             <CheckBox x:Name="MultiInstance" Content="Multi-instance · experimental" Checked="Multi_Changed" Unchecked="Multi_Changed" Margin="0,16,0,0" ToolTip="Legacy mutex method. Enable with Roblox closed. Compatibility depends on the current Roblox client."/>
           </StackPanel>
@@ -94,6 +94,6 @@
         </TabItem>
       </TabControl>
     </Grid>
-    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.7.0  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
+    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.8.0  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
   </Grid>
 </Window>

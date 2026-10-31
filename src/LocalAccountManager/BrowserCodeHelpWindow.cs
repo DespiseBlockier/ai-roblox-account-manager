@@ -26,7 +26,7 @@ public sealed class BrowserCodeHelpWindow : Window
     public const string Reference = """
         HOW YOUR SCRIPT RUNS
 
-        The manager runs your JavaScript once for each selected account, after verifying that browser's signed-in identity. It runs inside an async function, so you can use await directly.
+        The manager runs your JavaScript once for each selected account after verifying its signed-in identity. With no selection it runs once in a fresh private guest browser, without opening or saving a managed account. ram.account is null in guest mode. You can use await directly.
 
         ram is a helper object supplied to your script by this app. You do not install or import it. It is not a Roblox API and is not a global object in an ordinary browser console.
 
@@ -56,7 +56,7 @@ public sealed class BrowserCodeHelpWindow : Window
           Pause without blocking the page. Each pause is limited to five minutes (300000 ms). Stop or completion cancels a pending sleep.
 
         ram.account.username
-          The selected Roblox username (a string).
+          The selected Roblox username (a string). Check ram.account first in guest mode.
 
         ram.account.userId
           The selected Roblox user ID (a string, so large IDs do not lose precision).
@@ -68,6 +68,46 @@ public sealed class BrowserCodeHelpWindow : Window
           const response = await fetch('/some-page', {
             credentials: 'include', signal: ram.signal
           });
+
+        SOLVER HELPERS
+
+        const solver = ram.capsolver.register('YOUR_API_KEY');
+        // Or register Solvex with your own proxy:
+        const solver2 = ram.solvex.register('YOUR_API_KEY', {
+          proxyType: 'http', proxyAddress: 'YOUR_PROXY_HOST', proxyPort: 8080,
+          proxyLogin: 'YOUR_PROXY_USER', proxyPassword: 'YOUR_PROXY_PASSWORD'
+        });
+
+        const valid = await solver.status();
+          Resolves to true when the provider recognizes the key, including zero-balance accounts. False means it rejected the key or the check failed (for example, no network).
+
+        const captcha = ram.fetchcaptcha();
+          Reads supported visible widget/iframe configuration (reCAPTCHA v2, Turnstile, or FunCaptcha). Returns a task descriptor or null when configuration is not readable. It does not read saved credentials or export the browser cookie jar. ram.featchcaptcha() is an alias for the requested spelling. A provider-specific task object can also be passed explicitly; websiteURL must be a Roblox HTTPS page.
+
+        const result = await solver.solvecaptcha(captcha);
+          Resolves to {success, token, solution, errorCode, message}. A token is a provider result, not confirmation that Roblox accepted it. Tokens are not automatically inserted into the page. Failure includes a short code; there are no automatic paid retries. Stop/close cancels pending requests, but cannot undo a task already submitted to a provider. At most four requests may be pending; solves time out after two minutes.
+
+        if (!await solver2.status()) {
+          ram.stop('Key check failed or provider unavailable');
+          return;
+        }
+        const result = await solver2.solvecaptcha(ram.fetchcaptcha());
+        if (!result.success) {
+          ram.stop(result.errorCode);
+          return;
+        }
+        ram.status('Provider returned a solution; website acceptance is still required');
+        // Handle result.token using the website's normal flow. Do not log it.
+
+        Provider limitations:
+        • Solvex requires a proxy and the current challenge blob (data). Missing options fail before a paid request. Unknown site keys or session-bound challenges may require manual verification.
+        • CapSolver's current task catalogue does not list FunCaptcha. Those tasks return CAPSOLVER_FUNCAPTCHA_UNSUPPORTED. Use its documented supported tasks instead.
+        • Providers may charge for submitted tasks. Registration is local; status calls the provider balance endpoint. Provider billing is outside the manager's control.
+        • API keys and proxy credentials exist in your running script. Only use scripts/pages you trust. The editor clears on close. The app does not save solver keys, send saved Roblox passwords/cookies, follow solver redirects, or accept custom API hosts/callback URLs.
+
+        Official provider documentation:
+        https://solvex.run/docs
+        https://docs.capsolver.com/en/guide/api-tasktype/
 
         WAIT FOR SOMETHING ON THE CURRENT PAGE
 
@@ -101,6 +141,6 @@ public sealed class BrowserCodeHelpWindow : Window
 
         Your code runs with the selected Roblox website session's permissions. It can perform account actions and browser requests. Only run code you trust. Already-sent requests cannot be undone by Stop.
 
-        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and web-message bridges are disabled. Do not paste credentials or private data into scripts.
+        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver requests use a bounded polling channel to the fixed official API hosts. Never paste Roblox passwords/cookies or unrelated private data into scripts.
         """;
 }

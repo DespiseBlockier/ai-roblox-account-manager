@@ -10,7 +10,7 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.7.0</Version>
+    <Version>1.8.0</Version>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishSingleFile>true</PublishSingleFile>
@@ -24,6 +24,7 @@
     <PackageReference Include="QRCoder" Version="1.8.1" />
     <EmbeddedResource Include="../../examples/join-group.js" LogicalName="LocalAccountManager.JoinGroup.js" />
     <EmbeddedResource Include="Assets/UpdatePublicKey.bin" LogicalName="LocalAccountManager.UpdatePublicKey" />
+    <EmbeddedResource Include="Assets/BrowserSolvers.js" LogicalName="LocalAccountManager.BrowserSolvers.js" />
     <Resource Include="Assets/AppIcon.ico" />
   </ItemGroup>
 </Project>
