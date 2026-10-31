@@ -21,12 +21,7 @@ public sealed class BrowserCodeWindow : Window
     private readonly TextBox url = new() { Text = "https://www.roblox.com/home", MaxLength = 4096 };
     private readonly TextBox group = new() { Name = "GroupInput", MaxLength = 4096, MinWidth = 200 };
     private readonly TextBox minutes = new() { Text = "10", Width = 65, MaxLength = 3 };
-    private readonly TextBox code = new()
-    {
-        Name = "ScriptEditor", Text = BrowserCodeRuntime.Starter, AcceptsReturn = true, AcceptsTab = true, MaxLength = 128000,
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        FontFamily = new FontFamily("Consolas"), FontSize = 12, IsUndoEnabled = false
-    };
+    private readonly JavaScriptEditor code = new() { Name = "ScriptEditor", Text = BrowserCodeRuntime.Starter };
     private readonly CheckBox confirmGroup = new() { Content = "Confirm actual membership in this group before advancing" };
     private BrowserCodeHelpWindow? docs;
     private BrowserCodeExamplesWindow? examplesWindow;

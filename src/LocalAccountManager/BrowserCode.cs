@@ -70,7 +70,8 @@ public static class BrowserCodeRuntime
               const ram = Object.freeze({
                 addAccount: requestAddAccount, createAccount: requestCreateAccount,
                 account: identity === null ? null : Object.freeze(identity), signal: abort.signal,
-                capsolver: Object.freeze({register: (key, options) => registerSolver('capsolver', key, options)}),
+                twocaptcha: Object.freeze({register: (key, options) => registerSolver('2captcha', key, options)}),
+                anticaptcha: Object.freeze({register: (key, options) => registerSolver('anticaptcha', key, options)}),
                 solvex: Object.freeze({register: (key, options) => registerSolver('solvex', key, options)}),
                 fetchcaptcha: fetchCaptcha, featchcaptcha: fetchCaptcha,
                 status: value => { if (phase === 'running' || phase === 'waiting') message = text(value); },

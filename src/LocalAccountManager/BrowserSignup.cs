@@ -28,7 +28,8 @@ public sealed class SignupRequest
     public string Birthday { get; set; } = "";
     public bool AcceptTerms { get; set; }
     public string ApiKey { get; set; } = "";
-    public SignupProxy Proxy { get; set; } = new();
+    public string Provider { get; set; } = "solvex"; // Preserve existing explicitly run Solvex scripts.
+    public SignupProxy? Proxy { get; set; }
     public override string ToString() => "SignupRequest [redacted]";
     public void Validate()
     {
@@ -37,10 +38,22 @@ public sealed class SignupRequest
         if (Password is null || Password.Length < 8 || Password.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter a Roblox password of at least eight characters.");
         if (!DateOnly.TryParseExact(Birthday, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var birthday) || birthday > DateOnly.FromDateTime(DateTime.UtcNow) || birthday.Year < 1900) throw new UserError("Enter your real birthday as YYYY-MM-DD.");
         if (!AcceptTerms) throw new UserError("Read Roblox's terms and privacy policy, then set acceptTerms to true to sign up.");
-        if (string.IsNullOrWhiteSpace(ApiKey) || ApiKey.Length > 512 || ApiKey.Any(char.IsControl) || ApiKey.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter your own Solvex API key.");
-        if (Proxy is null || Proxy.Type is not ("http" or "https" or "socks5") || Proxy.Port is < 1 or > 65535 ||
+        _ = BrowserSolverClient.ProviderHost(Provider);
+        if (string.IsNullOrWhiteSpace(ApiKey) || ApiKey.Length > 512 || ApiKey.Any(char.IsControl) || ApiKey.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter your own " + BrowserSolverClient.ProviderName(Provider) + " API key.");
+        if (Proxy is null)
+        {
+            if (Provider == "solvex") throw new UserError("Solvex requires your own proxy. Use 2Captcha or Anti-Captcha for proxyless mode.");
+            return;
+        }
+        if (Provider != "solvex" && Proxy.Type == "https") throw new UserError("This provider supports http or socks5 proxies in signup. Use type http for an HTTP CONNECT proxy.");
+        if (Proxy.Type is not ("http" or "https" or "socks5") || Proxy.Port is < 1 or > 65535 ||
             string.IsNullOrWhiteSpace(Proxy.Address) || Proxy.Address.Length > 253 || Proxy.Address.StartsWith("YOUR_", StringComparison.Ordinal) ||
             Uri.CheckHostName(Proxy.Address) == UriHostNameType.Unknown || Proxy.Address.Any(c => c is '/' or '\\' or '@' or ':' || char.IsWhiteSpace(c) || char.IsControl(c))) throw new UserError("Enter a valid http, https, or socks5 proxy host and port.");
+        if (Provider == "anticaptcha")
+        {
+            var probe = JsonSerializer.SerializeToElement(new { type = "FunCaptchaTask", websiteURL = "https://www.roblox.com/", websitePublicKey = "validation", proxyType = Proxy.Type, proxyAddress = Proxy.Address, proxyPort = Proxy.Port, userAgent = "Validation/1.0" });
+            _ = BrowserSolverClient.ValidateTask(probe, Provider);
+        }
         foreach (string? value in new[] { Proxy.Login, Proxy.Password })
             if (value is not null && (value.Length > 512 || value.Any(char.IsControl))) throw new UserError("Invalid proxy credentials.");
     }
@@ -48,20 +61,20 @@ public sealed class SignupRequest
 }
 
 // One explicit signup, in a fresh cookie jar. Roblox credentials never go to the solver.
-// The same user-supplied proxy is used by Roblox requests and the CAPTCHA task.
+// An optional proxy is shared by Roblox requests and the CAPTCHA task. No proxy means direct Roblox requests.
 public sealed class BrowserSignupClient
 {
-    private readonly Func<CookieContainer, SignupProxy, HttpMessageHandler> handler;
+    private readonly Func<CookieContainer, SignupProxy?, HttpMessageHandler> handler;
     private readonly Func<SolverRequest, CancellationToken, Task<object>> solve;
     public BrowserSignupClient(Func<SolverRequest, CancellationToken, Task<object>> solve,
-        Func<CookieContainer, SignupProxy, HttpMessageHandler>? handler = null)
+        Func<CookieContainer, SignupProxy?, HttpMessageHandler>? handler = null)
     {
         this.solve = solve;
         this.handler = handler ?? ((cookies, proxy) => new HttpClientHandler
         {
             CookieContainer = cookies, UseCookies = true, AllowAutoRedirect = false,
-            Proxy = new WebProxy(new Uri($"{proxy.Type}://{proxy.Address}:{proxy.Port}"))
-            { Credentials = string.IsNullOrEmpty(proxy.Login) ? null : new NetworkCredential(proxy.Login, proxy.Password) }, UseProxy = true
+            Proxy = proxy is null ? null : new WebProxy(new Uri($"{proxy.Type}://{proxy.Address}:{proxy.Port}"))
+            { Credentials = string.IsNullOrEmpty(proxy.Login) ? null : new NetworkCredential(proxy.Login, proxy.Password) }, UseProxy = proxy is not null
         });
     }
 
@@ -128,13 +141,31 @@ public sealed class BrowserSignupClient
                 var config = await Read(metadataResponse, cancel);
                 string siteKey = Text(config.GetProperty("funCaptchaPublicKeys"), "ACTION_TYPE_WEB_SIGNUP", 100);
                 if (!Guid.TryParse(siteKey, out _)) throw new UserError("Roblox returned an unsupported CAPTCHA key.");
-                progress("CAPTCHA detected. Requesting one Solvex solution…");
-                var task = JsonSerializer.SerializeToElement(new { type = "FunCaptchaTask", websiteURL = "https://www.roblox.com/", websitePublicKey = siteKey, data = blob,
-                    proxyType = call.Proxy.Type, proxyAddress = call.Proxy.Address, proxyPort = call.Proxy.Port, proxyLogin = call.Proxy.Login, proxyPassword = call.Proxy.Password });
-                var solved = JsonSerializer.SerializeToElement(await solve(new SolverRequest { Id = 1, Provider = "solvex", Action = "solve", ApiKey = call.ApiKey, Task = task }, cancel));
-                if (!solved.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.True) throw new UserError("Solvex could not solve this CAPTCHA. Signup stopped without another paid attempt.");
-                string token = Text(solved, "token", 20000), solverAgent = Text(solved.GetProperty("solution"), "userAgent", 1000);
-                if (solverAgent.Any(char.IsControl)) throw new UserError("Solvex returned an invalid user agent.");
+                string providerName = BrowserSolverClient.ProviderName(call.Provider);
+                progress("CAPTCHA detected. Requesting one " + providerName + " solution…");
+                var taskFields = new Dictionary<string, object?>
+                {
+                    ["type"] = call.Proxy is null ? "FunCaptchaTaskProxyless" : "FunCaptchaTask",
+                    ["websiteURL"] = "https://www.roblox.com/", ["websitePublicKey"] = siteKey,
+                    ["data"] = call.Provider == "solvex" ? blob : JsonSerializer.Serialize(new { blob })
+                };
+                if (call.Provider == "2captcha" || call.Provider == "anticaptcha" && call.Proxy is not null) taskFields["userAgent"] = userAgent;
+                if (call.Proxy is SignupProxy proxy)
+                {
+                    taskFields["proxyType"] = proxy.Type; taskFields["proxyAddress"] = proxy.Address; taskFields["proxyPort"] = proxy.Port;
+                    if (!string.IsNullOrEmpty(proxy.Login)) taskFields["proxyLogin"] = proxy.Login;
+                    if (!string.IsNullOrEmpty(proxy.Password)) taskFields["proxyPassword"] = proxy.Password;
+                }
+                var task = JsonSerializer.SerializeToElement(taskFields);
+                var solved = JsonSerializer.SerializeToElement(await solve(new SolverRequest { Id = 1, Provider = call.Provider, Action = "solve", ApiKey = call.ApiKey, Task = task }, cancel));
+                if (!solved.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.True) throw new UserError(providerName + " could not solve this CAPTCHA. Signup stopped without another paid attempt.");
+                string token = Text(solved, "token", 20000);
+                var solution = solved.GetProperty("solution");
+                string solverAgent = solution.TryGetProperty("userAgent", out var returnedAgent) && returnedAgent.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(returnedAgent.GetString())
+                    ? Text(solution, "userAgent", 1000)
+                    : call.Provider == "2captcha" || call.Provider == "anticaptcha" && call.Proxy is not null ? userAgent
+                    : throw new UserError(providerName + " did not return the user agent needed to submit this solution.");
+                if (solverAgent.Any(char.IsControl)) throw new UserError(providerName + " returned an invalid user agent.");
                 client.DefaultRequestHeaders.UserAgent.Clear(); client.DefaultRequestHeaders.UserAgent.ParseAdd(solverAgent);
                 string proofMetadata = JsonSerializer.Serialize(new { unifiedCaptchaId = captchaId, captchaToken = token, actionType = "Signup" });
                 progress("Submitting the solution to Roblox…");
@@ -167,7 +198,7 @@ public sealed class BrowserSignupClient
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
         catch (UserError) { throw; }
-        catch { throw new UserError(created ? "The account was created, but could not be saved. Sign in through Add account to save it." : submitted ? "Signup's outcome could not be confirmed. Check the username before retrying; no automatic retry was made." : "Signup preparation failed. Check your proxy and try again."); }
+        catch { throw new UserError(created ? "The account was created, but could not be saved. Sign in through Add account to save it." : submitted ? "Signup's outcome could not be confirmed. Check the username before retrying; no automatic retry was made." : "Signup preparation failed. Check your connection or optional proxy and try again."); }
         finally { call.ClearSecrets(); }
     }
     private static UserError Rejected(HttpStatusCode code) => new(code == HttpStatusCode.TooManyRequests ? "Roblox rate limited signup. Stop and try later." : "Roblox rejected signup. Check the username, password, birthday, and verification requirements before trying again.");

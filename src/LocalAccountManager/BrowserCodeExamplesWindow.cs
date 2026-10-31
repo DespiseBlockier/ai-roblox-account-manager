@@ -19,7 +19,7 @@ public sealed class BrowserCodeExamplesWindow : Window
         var detail = new DockPanel(); Grid.SetColumn(detail, 1); root.Children.Add(detail);
         var description = new TextBlock { Name = "ExampleDescription", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; DockPanel.SetDock(description, Dock.Top); detail.Children.Add(description);
         use.Style = (Style)FindResource("Primary"); use.Margin = new Thickness(0, 10, 0, 0); use.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(use, Dock.Bottom); detail.Children.Add(use);
-        var preview = new TextBox { Name = "ExamplePreview", IsReadOnly = true, AcceptsReturn = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new FontFamily("Consolas"), FontSize = 12 }; detail.Children.Add(preview);
+        var preview = new JavaScriptEditor { Name = "ExamplePreview", IsReadOnly = true }; detail.Children.Add(preview);
         list.SelectionChanged += (_, _) =>
         {
             if (list.SelectedItem is not BrowserCodeExample example) return;

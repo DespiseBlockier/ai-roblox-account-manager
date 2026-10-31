@@ -30,6 +30,13 @@ public static class BrowserSolverRuntime
 
 public sealed class BrowserSolverClient : IDisposable
 {
+    public static string ProviderHost(string provider) => provider switch
+    {
+        "2captcha" => "api.2captcha.com", "anticaptcha" => "api.anti-captcha.com", "solvex" => "api.solvex.run",
+        _ => throw new UserError("UNSUPPORTED_PROVIDER")
+    };
+    public static string ProviderName(string provider) => provider switch
+    { "2captcha" => "2Captcha", "anticaptcha" => "Anti-Captcha", "solvex" => "Solvex", _ => throw new UserError("UNSUPPORTED_PROVIDER") };
     private readonly HttpClient client;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     public BrowserSolverClient(HttpMessageHandler? handler = null, Func<TimeSpan, CancellationToken, Task>? delay = null)
@@ -43,7 +50,7 @@ public sealed class BrowserSolverClient : IDisposable
         try
         {
             if (request.Id < 1 || request.ApiKey is null || request.ApiKey.Length is < 1 or > 512 || request.ApiKey.Any(char.IsControl)) throw new UserError("INVALID_API_KEY");
-            string host = request.Provider switch { "capsolver" => "api.capsolver.com", "solvex" => "api.solvex.run", _ => throw new UserError("UNSUPPORTED_PROVIDER") };
+            string host = ProviderHost(request.Provider);
             if (status)
             {
                 var balance = await Post(host, "getBalance", new { clientKey = request.ApiKey }, cancel);
@@ -51,15 +58,15 @@ public sealed class BrowserSolverClient : IDisposable
             }
             if (request.Action != "solve") throw new UserError("UNSUPPORTED_ACTION");
             var task = ValidateTask(request.Task, request.Provider);
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel); deadline.CancelAfter(TimeSpan.FromMinutes(2));
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel); deadline.CancelAfter(TimeSpan.FromMinutes(request.Provider == "solvex" ? 2 : 5));
             var result = await Post(host, "createTask", new { clientKey = request.ApiKey, task }, deadline.Token);
             if (HasError(result)) return Failure(ErrorCode(result, request.ApiKey));
             if (!Ready(result))
             {
                 if (!result.TryGetProperty("taskId", out var taskId) || taskId.ValueKind is not (JsonValueKind.String or JsonValueKind.Number) || taskId.ToString().Length is < 1 or > 200) return Failure("INVALID_PROVIDER_RESPONSE");
-                for (int poll = 0; poll < 120; poll++)
+                for (int poll = 0; poll < (request.Provider == "solvex" ? 120 : 60); poll++)
                 {
-                    await delay(TimeSpan.FromMilliseconds(request.Provider == "solvex" ? 500 : 2000), deadline.Token);
+                    await delay(TimeSpan.FromMilliseconds(request.Provider == "solvex" ? 500 : 5000), deadline.Token);
                     result = await Post(host, "getTaskResult", new { clientKey = request.ApiKey, taskId = taskId.Clone() }, deadline.Token);
                     if (HasError(result)) return Failure(ErrorCode(result, request.ApiKey));
                     if (Ready(result)) break;
@@ -84,25 +91,50 @@ public sealed class BrowserSolverClient : IDisposable
     }
     public static Dictionary<string, JsonElement> ValidateTask(JsonElement task, string provider)
     {
+        _ = ProviderHost(provider);
         if (task.ValueKind != JsonValueKind.Object || task.GetRawText().Length > 64000) throw new UserError("INVALID_CAPTCHA");
         var fields = new Dictionary<string, JsonElement>();
         foreach (var field in task.EnumerateObject())
         {
-            if (field.Name is not ("type" or "websiteURL" or "websiteKey" or "websitePublicKey" or "data" or "funcaptchaApiJSSubdomain" or "isInvisible" or "pageAction" or "minScore" or "enterprisePayload" or "metadata" or "recaptchaDataSValue" or "apiDomain" or "proxy" or "proxyType" or "proxyAddress" or "proxyPort" or "proxyLogin" or "proxyPassword" or "userAgent" or "body" or "browser" or "useHttp3")) throw new UserError("UNSUPPORTED_TASK_FIELD");
+            if (field.Name is not ("type" or "websiteURL" or "websitePublicKey" or "data" or "funcaptchaApiJSSubdomain" or "proxyType" or "proxyAddress" or "proxyPort" or "proxyLogin" or "proxyPassword" or "userAgent" or "browser" or "useHttp3")) throw new UserError("UNSUPPORTED_TASK_FIELD");
             if (!fields.TryAdd(field.Name, field.Value.Clone())) throw new UserError("INVALID_CAPTCHA");
         }
         if (!fields.TryGetValue("type", out var typeValue) || typeValue.ValueKind != JsonValueKind.String || typeValue.GetString() is not string type || !Regex.IsMatch(type, "^[A-Za-z0-9]{1,80}$")) throw new UserError("INVALID_CAPTCHA_TYPE");
         if (!fields.TryGetValue("websiteURL", out var url) || url.ValueKind != JsonValueKind.String || !Security.IsBrowserPage(url.GetString() ?? "")) throw new UserError("INVALID_WEBSITE_URL");
-        if (provider == "solvex")
+        if (type != "FunCaptchaTask" && (provider == "solvex" || type != "FunCaptchaTaskProxyless")) throw new UserError("UNSUPPORTED_CAPTCHA_TYPE");
+        if (!fields.TryGetValue("websitePublicKey", out var publicKey) || publicKey.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(publicKey.GetString())) throw new UserError("CAPTCHA_KEY_REQUIRED");
+        if (type == "FunCaptchaTask")
         {
-            if (type != "FunCaptchaTask") throw new UserError("UNSUPPORTED_CAPTCHA_TYPE");
             if (!fields.TryGetValue("proxyType", out var proxyType) || proxyType.ValueKind != JsonValueKind.String || proxyType.GetString() is not ("http" or "https" or "socks4" or "socks5") ||
                 !fields.TryGetValue("proxyAddress", out var address) || address.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(address.GetString()) ||
                 !fields.TryGetValue("proxyPort", out var port) || port.ValueKind != JsonValueKind.Number || !port.TryGetInt32(out int number) || number is < 1 or > 65535) throw new UserError("PROXY_REQUIRED");
-            if (!fields.TryGetValue("data", out var blob) || blob.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(blob.GetString())) throw new UserError("CAPTCHA_DATA_REQUIRED");
-            if (!fields.TryGetValue("websitePublicKey", out var publicKey) || publicKey.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(publicKey.GetString())) throw new UserError("CAPTCHA_KEY_REQUIRED");
+            if (provider != "solvex" && proxyType.GetString() == "https") throw new UserError("UNSUPPORTED_PROXY_TYPE");
+            if (provider == "anticaptcha")
+            {
+                if (!System.Net.IPAddress.TryParse(address.GetString(), out var ip) || System.Net.IPAddress.IsLoopback(ip) || ip.Equals(System.Net.IPAddress.Any) || ip.Equals(System.Net.IPAddress.IPv6Any)) throw new UserError("ANTICAPTCHA_PUBLIC_PROXY_IP_REQUIRED");
+                if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+                byte[] bytes = ip.GetAddressBytes();
+                if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || bytes.Length == 4 && (bytes[0] == 10 || bytes[0] == 127 || bytes[0] == 192 && bytes[1] == 168 || bytes[0] == 172 && bytes[1] is >= 16 and <= 31 || bytes[0] == 169 && bytes[1] == 254) || bytes.Length == 16 && (bytes[0] & 0xfe) == 0xfc) throw new UserError("ANTICAPTCHA_PUBLIC_PROXY_IP_REQUIRED");
+                if (!fields.TryGetValue("userAgent", out var ua) || ua.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(ua.GetString())) throw new UserError("USER_AGENT_REQUIRED");
+            }
         }
-        else if (type.StartsWith("FunCaptcha", StringComparison.OrdinalIgnoreCase)) throw new UserError("CAPSOLVER_FUNCAPTCHA_UNSUPPORTED");
+        else if (fields.Keys.Any(k => k.StartsWith("proxy", StringComparison.Ordinal))) throw new UserError("PROXYLESS_TASK_HAS_PROXY_FIELDS");
+        if (fields.TryGetValue("userAgent", out var agent) && (agent.ValueKind != JsonValueKind.String || agent.GetString() is not string text || text.Length is < 1 or > 1000 || text.Any(char.IsControl))) throw new UserError("INVALID_USER_AGENT");
+        if (fields.TryGetValue("funcaptchaApiJSSubdomain", out var domain) && (domain.ValueKind != JsonValueKind.String || domain.GetString() is not string host || host.Length > 253 || !Regex.IsMatch(host, @"^(?:[a-zA-Z0-9-]+\.)*(?:arkoselabs\.com|funcaptcha\.com)$|^arkoselabs\.roblox\.com$"))) throw new UserError("INVALID_CAPTCHA_SUBDOMAIN");
+        if (provider == "solvex")
+        {
+            if (!fields.TryGetValue("data", out var blob) || blob.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(blob.GetString())) throw new UserError("CAPTCHA_DATA_REQUIRED");
+        }
+        else
+        {
+            if (fields.ContainsKey("browser") || fields.ContainsKey("useHttp3")) throw new UserError("UNSUPPORTED_TASK_FIELD");
+            if (fields.TryGetValue("data", out var data))
+            {
+                if (data.ValueKind != JsonValueKind.String) throw new UserError("INVALID_CAPTCHA_DATA");
+                try { using var json = JsonDocument.Parse(data.GetString()!); if (json.RootElement.ValueKind != JsonValueKind.Object || json.RootElement.EnumerateObject().Any(p => p.Name != "blob") || !json.RootElement.TryGetProperty("blob", out var blob) || blob.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(blob.GetString())) throw new UserError("INVALID_CAPTCHA_DATA"); }
+                catch (JsonException) { throw new UserError("INVALID_CAPTCHA_DATA"); }
+            }
+        }
         return fields;
     }
     private async Task<JsonElement> Post(string host, string action, object payload, CancellationToken cancel)

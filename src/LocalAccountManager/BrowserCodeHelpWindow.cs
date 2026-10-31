@@ -82,7 +82,9 @@ public sealed class BrowserCodeHelpWindow : Window
 
         SOLVER HELPERS
 
-        const solver = ram.capsolver.register('YOUR_API_KEY');
+        const solver = ram.twocaptcha.register('YOUR_2CAPTCHA_KEY', {userAgent:navigator.userAgent});
+        // Or use Anti-Captcha without proxy settings:
+        const anti = ram.anticaptcha.register('YOUR_ANTICAPTCHA_KEY');
         // Or register Solvex with your own proxy:
         const solver2 = ram.solvex.register('YOUR_API_KEY', {
           proxyType: 'http', proxyAddress: 'YOUR_PROXY_HOST', proxyPort: 8080,
@@ -96,7 +98,7 @@ public sealed class BrowserCodeHelpWindow : Window
           Reads supported visible widget/iframe configuration (reCAPTCHA v2, Turnstile, or FunCaptcha). Returns a task descriptor or null when configuration is not readable. It does not read saved credentials or export the browser cookie jar. ram.featchcaptcha() is an alias for the requested spelling. A provider-specific task object can also be passed explicitly; websiteURL must be a Roblox HTTPS page.
 
         const result = await solver.solvecaptcha(captcha);
-          Resolves to {success, token, solution, errorCode, message}. A token is a provider result, not confirmation that Roblox accepted it. Tokens are not automatically inserted into the page. Failure includes a short code; there are no automatic paid retries. Stop/close cancels pending requests, but cannot undo a task already submitted to a provider. At most four requests may be pending; solves time out after two minutes.
+          Resolves to {success, token, solution, errorCode, message}. A token is a provider result, not confirmation that Roblox accepted it. Tokens are not automatically inserted into the page. Failure includes a short code; there are no automatic paid retries. Stop/close cancels pending requests, but cannot undo a task already submitted to a provider. At most four requests may be pending; Solvex solves time out after two minutes; 2Captcha/Anti-Captcha solves after five minutes. Those providers are polled every five seconds.
 
         if (!await solver2.status()) {
           ram.stop('Key check failed or provider unavailable');
@@ -112,22 +114,27 @@ public sealed class BrowserCodeHelpWindow : Window
 
         Provider limitations:
         • Solvex requires a proxy and the current challenge blob (data). Missing options fail before a paid request. Unknown site keys or session-bound challenges may require manual verification.
-        • CapSolver's current task catalogue does not list FunCaptcha. Those tasks return CAPSOLVER_FUNCAPTCHA_UNSUPPORTED. Use its documented supported tasks instead.
+        • 2Captcha and Anti-Captcha support FunCaptchaTaskProxyless without your own proxy. Supplying proxyType/proxyAddress/proxyPort switches to FunCaptchaTask. Anti-Captcha proxy mode requires a public IP address and a userAgent option.
+        • Solver helpers currently accept FunCaptcha tasks only. Other detected CAPTCHA types return UNSUPPORTED_CAPTCHA_TYPE before a paid request. A returned token may still be rejected by Roblox due to session/IP restrictions.
+        • Open Examples for separate 2Captcha, Anti-Captcha, and Solvex token examples and create + save examples.
         • Providers may charge for submitted tasks. Registration is local; status calls the provider balance endpoint. Provider billing is outside the manager's control.
         • API keys and proxy credentials exist in your running script. Only use scripts/pages you trust. The editor clears on close. The app does not save solver keys, send saved Roblox passwords/cookies, follow solver redirects, or accept custom API hosts/callback URLs.
 
         CREATE ONE ACCOUNT AND SAVE IT
 
         const saved = await ram.createAccount({
+          provider: '2captcha', // '2captcha', 'anticaptcha', or 'solvex'
           username: 'YOUR_USERNAME', password: 'YOUR_PASSWORD',
           birthday: 'YYYY-MM-DD', acceptTerms: false,
-          apiKey: 'YOUR_SOLVEX_KEY',
-          proxy: {type:'http', address:'YOUR_PROXY_HOST', port:8080, login:'', password:''}
+          apiKey: 'YOUR_PROVIDER_API_KEY',
+          proxy: null // Required proxy object for Solvex; optional for the other two.
         });
 
         Guest mode only (no account selected), once per run. Fill in your own details and real birthday. Read Roblox's terms/privacy policy before setting acceptTerms to true. The Examples button includes this script. It does not run until you choose Run.
 
-        This native helper submits one signup through your proxy, detects a signup CAPTCHA, requests at most one Solvex solution, submits Roblox's challenge continuation and retries signup with the accepted proof. It uses the solver's returned user agent and the same proxy. CapSolver is not used for this FunCaptcha flow. Unsupported challenges, rejection, and rate limits stop the attempt.
+        Choose the provider explicitly; an omitted provider preserves the old Solvex behavior. No provider fallback is made. With proxy:null, 2Captcha and Anti-Captcha use their own solver connections while Roblox signup uses your normal connection. With a proxy object, Roblox and the solver use that same proxy. Solvex requires your proxy. Proxyless results may still be rejected by Roblox.
+
+        The helper detects the signup CAPTCHA, requests one solution from the chosen provider, submits Roblox's challenge continuation, then retries signup with the proof. It uses the provider's returned user agent when available; 2Captcha can retain the explicitly supplied browser user agent. Unsupported challenges, rejection, and rate limits stop the attempt.
 
         Only after Roblox returns a successful user ID, session cookie, and matching authenticated identity does it save the password/cookie using your active vault protection. The promise resolves after saving, with success, saved, userId, and username only. The cookie is never returned to JavaScript. No extra ram.addAccount call is needed.
 
@@ -135,7 +142,8 @@ public sealed class BrowserCodeHelpWindow : Window
 
         Official provider documentation:
         https://solvex.run/docs
-        https://docs.capsolver.com/en/guide/api-tasktype/
+        https://2captcha.com/api-docs/arkoselabs-funcaptcha
+        https://anti-captcha.com/apidoc/task-types/FunCaptchaTaskProxyless
 
         WAIT FOR SOMETHING ON THE CURRENT PAGE
 

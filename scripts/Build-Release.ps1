@@ -88,6 +88,7 @@ Use Check for updates, then Update & restart to install a verified release.
         if (Test-Path -LiteralPath $wvLicense) { Copy-Item -LiteralPath $wvLicense -Destination (Join-Path $notices ('WebView2-' + $name)) }
     }
     Copy-Item -LiteralPath (Join-Path $env:NUGET_PACKAGES 'qrcoder\1.8.1\LICENSE.txt') -Destination (Join-Path $notices 'QRCoder-LICENSE.txt')
+    Copy-Item -LiteralPath (Join-Path $taskRoot 'third-party\AvalonEdit-LICENSE.txt') -Destination (Join-Path $notices 'AvalonEdit-LICENSE.txt')
     $rootFiles = @(Get-ChildItem -LiteralPath $package -File | ForEach-Object Name)
     $rootFolders = @(Get-ChildItem -LiteralPath $package -Directory | ForEach-Object Name)
     if ($rootFiles.Count -ne 2 -or 'RobloxAccountManager.exe' -notin $rootFiles -or 'START-HERE.txt' -notin $rootFiles -or $rootFolders.Count -ne 1 -or $rootFolders[0] -ne 'Docs') {

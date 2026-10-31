@@ -44,13 +44,18 @@ const registerSolver = (provider, apiKey, options = {}) => {
       if (!captcha || typeof captcha !== 'object') return {success:false, token:null, solution:null, errorCode:'CAPTCHA_NOT_FOUND', message:'No readable CAPTCHA was found.'};
       const task = Object.assign({}, config, captcha);
       if (task.kind === 'funcaptcha') {
-        task.type = provider === 'solvex' ? 'FunCaptchaTask' : 'FunCaptchaTaskProxyLess';
-        if (provider === 'solvex' && typeof task.data === 'string') {
-          try { const value = JSON.parse(task.data); if (typeof value.blob === 'string') task.data = value.blob; } catch { }
+        const hasProxy = ['proxyType','proxyAddress','proxyPort','proxyLogin','proxyPassword'].some(name => Object.hasOwn(task, name));
+        task.type = provider === 'solvex' || hasProxy ? 'FunCaptchaTask' : 'FunCaptchaTaskProxyless';
+        if (typeof task.data === 'string') {
+          if (provider === 'solvex') {
+            try { const value = JSON.parse(task.data); if (typeof value.blob === 'string') task.data = value.blob; } catch { }
+          } else {
+            try { JSON.parse(task.data); } catch { task.data = JSON.stringify({blob:task.data}); }
+          }
         }
+      } else if (task.kind) {
+        return {success:false, token:null, solution:null, errorCode:'UNSUPPORTED_CAPTCHA_TYPE', message:'These solver helpers currently support FunCaptcha only.'};
       }
-      if (task.kind === 'recaptcha-v2') task.type = 'ReCaptchaV2TaskProxyLess';
-      if (task.kind === 'turnstile') task.type = 'AntiTurnstileTaskProxyLess';
       delete task.kind;
       if (JSON.stringify(task).length > 64000) throw new Error('CAPTCHA task is too large.');
       return await solverRequest(provider, 'solve', apiKey, task);
