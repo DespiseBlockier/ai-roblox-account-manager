@@ -50,3 +50,9 @@ Check.cmd
 .updates/
 *.dpapi
 *.update-tmp
+
+# Imported Google OAuth client files are private local configuration.
+client_secret*.json
+credentials*.json
+gmail-client*.json
+gmail-tokens*.json

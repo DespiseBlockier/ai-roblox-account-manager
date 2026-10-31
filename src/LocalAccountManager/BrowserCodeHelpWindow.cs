@@ -80,6 +80,39 @@ public sealed class BrowserCodeHelpWindow : Window
 
           This requires an already authenticated session in the current document. A signed-out/expired session rejects without adding a placeholder. A selected-account browser cannot save a different user's session; use guest mode for a different account. Navigation stops the script, so this function alone is not a complete automatic signup workflow.
 
+        GMAIL HELPERS
+
+        Connect Gmail in Settings → Gmail connections first. This uses Google sign-in in your normal browser, an imported Desktop OAuth client, and a temporary localhost callback. You do not need to host a server. The setup screen explains the Google Cloud steps. Your Google password is never entered in the manager.
+
+        const mailboxes = await ram.email.list();
+          Returns [{id, address, automaticLoginCodes}]. No Google client secret or access/refresh token is exposed to JavaScript. The Gmail grant is read-only; this app queries Roblox verification messages only. There is no general inbox or sending/deleting API.
+
+        const message = await ram.email.waitForCode({
+          mailbox: 'YOUR_GMAIL_ADDRESS', // Connected address or mailbox ID.
+          username: ram.account?.username || 'YOUR_ROBLOX_USERNAME',
+          address: 'YOUR_GMAIL_ADDRESS', // Optional; may be a plus alias of that mailbox.
+          timeoutSeconds: 120 // 1–300 seconds.
+        });
+          Returns {code, receivedAt}. Trigger the email 2FA challenge before waiting. Mail must be newer than this code run and match this account, an observed login in this browser, or a saved Gmail-associated account. Sender authentication, recipient, username greeting, purpose, freshness and unambiguous code are checked. Unmatched or unsupported mail is left manual. A code is consumed once; do not log it. Returning it does not submit it.
+
+          Ordinary manager Browser login, Bulk sign in, and reconnect already fill/submit one matching email code when the mailbox's automatic option is enabled. These do not fill authenticator/recovery/SMS/passkey prompts or automatically resend codes.
+
+        const result = await ram.email.linkAndVerify({
+          mailbox: 'YOUR_GMAIL_ADDRESS', address: 'YOUR_GMAIL_ADDRESS',
+          replaceExisting: false
+        });
+          Adds/verifies a connected Gmail address or plus alias on the current authenticated, saved Roblox account. Omit address to use the mailbox's address. A different existing address is preserved by default. The explicit replaceExisting:true option permits replacing it. Requires a valid signed-in identity and may require the saved Roblox password or additional manual verification.
+
+          Returns {verified, address, username}. Only Roblox's actual email status can confirm success. The trusted email link opens in a separate visible view while your script waits in its original document. Do not assume DOM operations after this helper target that view. Unknown email formats, parental/recovery steps, challenges and provider limits stay manual.
+
+        const saved = await ram.createAccount({
+          // Include the normal username/password/birthday/provider/key/options.
+          email: {mailbox:'YOUR_GMAIL_ADDRESS', address:'YOUR_GMAIL_ADDRESS', verify:true}
+        });
+          Open Examples → Create account + Gmail for the complete template. The Roblox account is saved BEFORE email setup. After a later email failure, saved.emailVerified is false and saved.emailError describes the remaining step. The account remains saved; do not repeat signup to fix its email. If email was not requested, emailVerified is null. Set verify:false only to add the address without waiting for verification.
+
+          Google credentials remain in your portable vault. A master password encrypts them. No master password leaves refresh tokens readable and is Not recommended. Layout exports and shareable builds exclude Google access. Google can expire Testing grants after seven days; reconnect in Settings. Current automatic parsing supports English Roblox email templates. Real private Gmail/Roblox flows require your own client setup and have not been live-tested.
+
         SOLVER HELPERS
 
         const solver = ram.twocaptcha.register('YOUR_2CAPTCHA_KEY', {userAgent:navigator.userAgent});

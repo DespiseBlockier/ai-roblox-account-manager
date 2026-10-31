@@ -24,6 +24,34 @@ public static class BrowserCodeExamples
         new("2Captcha CAPTCHA", "Uses 2Captcha's proxyless FunCaptcha task. Set your API key. Requests one solution and returns its token to your script. Does not submit it, create an account, or save to the vault.", SolverExample("twocaptcha")),
         new("Anti-Captcha CAPTCHA", "Uses Anti-Captcha's proxyless FunCaptcha task. Set your API key. Requests one solution and returns its token to your script. Does not submit it, create an account, or save to the vault.", SolverExample("anticaptcha")),
         new("Solvex CAPTCHA", "Set your Solvex key and proxy. Requests one FunCaptcha solution. Does not submit it, create an account, or save to the vault.", SolverExample("solvex")),
+        new("List connected Gmail", "Lists connected mailbox addresses and IDs. Google tokens and inbox messages are never returned.", """
+            const mailboxes = await ram.email.list();
+            ram.status(mailboxes.length ? mailboxes.map(m => m.address).join(', ') : 'Connect Gmail in Settings first.');
+            // Each mailbox has id, address, and automaticLoginCodes. No credentials.
+            ram.done();
+            """),
+        new("Wait for Roblox email code", "Trigger an email 2FA challenge first. Matches this account, an observed login, or a saved Gmail-associated account. Returns one fresh code without exposing other mail. Regular manager sign-in fills it automatically.", """
+            const mailbox = 'YOUR_GMAIL_ADDRESS'; // Connect it in Settings → Gmail.
+            const username = ram.account?.username || 'YOUR_ROBLOX_USERNAME';
+            ram.status('Waiting for a fresh Roblox email 2FA code…');
+            const result = await ram.email.waitForCode({mailbox, username, timeoutSeconds:120});
+            // result.code is available for your own page code. Never log it.
+            ram.status('Received a matching fresh code. It has not been submitted by this script.');
+            // Returning keeps the browser open. Manager sign-in uses native autofill instead.
+            """),
+        new("Link and verify Gmail", "Adds and verifies a connected Gmail address on this signed-in saved account. Stops before replacing a different existing address unless replaceExisting:true is explicitly supplied. Only Roblox's verified email status counts as success.", """
+            const mailbox = 'YOUR_GMAIL_ADDRESS';
+            try {
+              const result = await ram.email.linkAndVerify({mailbox, address:mailbox});
+              if (result.verified) { ram.status('Roblox confirmed email verification.'); ram.done(); }
+            } catch (error) {
+              ram.status(error.message);
+              // Finish any remaining steps in the visible browser; Stop when finished.
+            }
+            """, RequiresAccount:true),
+        new("Create account + Gmail", SignupDescription + " Connect Gmail in Settings first. The account is saved before email setup; a pending email must never cause the account to be created again.",
+            SignupExample("2captcha").Replace("proxy: null", "proxy: null,\n  email: {mailbox:'YOUR_GMAIL_ADDRESS', address:'YOUR_GMAIL_ADDRESS', verify:true}")
+            .Replace("ram.status('Created and saved @' + saved.username);", "if (!saved.emailVerified) {\n  ram.status('Account created and saved. Email needs attention: ' + (saved.emailError || 'Finish verification in the browser.'));\n  return; // Keep the browser open; do not recreate this username.\n}\nram.status('Created, saved, and email verified @' + saved.username);"), GuestOnly:true),
         new("Join a group", "Set groupId in the code and enter the same ID in membership confirmation. Pending approval is not membership. Requires a selected account.",
             BrowserCodeRuntime.JoinGroupExample(1).Replace("const groupId = 1;", "const groupId = 0; // Replace 0 with your community ID."), RequiresAccount: true, Group: true)
     ];

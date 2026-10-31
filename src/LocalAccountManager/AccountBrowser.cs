@@ -8,7 +8,7 @@ using System.Windows.Threading;
 namespace LocalAccountManager;
 
 public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity,
-    Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null)
+    Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
 {
     private readonly Dictionary<Guid, AccountBrowser> browsers = [];
     private Task<CoreWebView2Environment>? environment;
@@ -41,7 +41,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
             if (visible) { current.ShowForUser(); if (navigate) current.Navigate(url); }
             return current;
         }
-        var browser = new AccountBrowser(account, env, api, onIdentity, guest, onAddAccount);
+        var browser = new AccountBrowser(account, env, api, onIdentity, guest, onAddAccount, gmail);
         browser.AccountAdded += saved => { if (guest) CloseAccount(saved); };
         browsers.Add(account.Id, browser);
         browser.Closed += (_, _) => browsers.Remove(account.Id);
@@ -145,6 +145,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
 public sealed partial class AccountBrowser : Window
 {
     private readonly Account account;
+    private readonly GmailService? gmail;
     private readonly CoreWebView2Environment environment;
     private readonly RobloxApi api;
     private readonly Func<Account, RobloxIdentity, string, bool, Task> onIdentity;
@@ -183,12 +184,12 @@ public sealed partial class AccountBrowser : Window
     public event Action<Account>? AccountAdded;
 
     public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity, bool guest = false,
-        Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null)
+        Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
     {
         Style = (Style)FindResource(typeof(Window));
         this.account = account; this.environment = environment; this.api = api; this.onIdentity = onIdentity;
         IsGuest = guest;
-        this.onAddAccount = onAddAccount;
+        this.onAddAccount = onAddAccount; this.gmail = gmail;
         Title = "Roblox · " + account.Username + " · Account browser";
         if (guest) { Title = "Roblox · Guest browser"; status.Text = "Fresh private guest session. Sign-ins here are not automatically saved to your account list."; }
         Width = 1160; Height = 820; MinWidth = 800; MinHeight = 600;
@@ -210,11 +211,11 @@ public sealed partial class AccountBrowser : Window
         {
             if (ticking || disposed || !loginMode) return;
             ticking = true;
-            try { await Autofill(); await Connect(automatic: true); }
+            try { await Autofill(); await MaybeFillEmailLogin(); await Connect(automatic: true); }
             catch (Exception ex) { if (!disposed) status.Text = Security.Friendly(ex); }
             finally { ticking = false; }
         };
-        Closed += (_, _) => { disposed = true; closedCancellation.Cancel(); loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop(); loginComplete.TrySetResult(LoginOutcome.Stopped); signupWeb?.Dispose(); signupWeb = null; web.Dispose(); };
+        Closed += (_, _) => { disposed = true; CancelEmailLogin(); closedCancellation.Cancel(); loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop(); loginComplete.TrySetResult(LoginOutcome.Stopped); signupWeb?.Dispose(); signupWeb = null; web.Dispose(); };
     }
 
     public async Task Initialize()
@@ -257,7 +258,7 @@ public sealed partial class AccountBrowser : Window
                 try { Security.LaunchRoblox(args.Uri); status.Text = "Launch request sent to the installed Roblox player."; }
                 catch (Exception ex) { status.Text = Security.Friendly(ex); }
             };
-            core.SourceChanged += (_, _) => { if (signupWeb is null) address.Text = core.Source; };
+            core.SourceChanged += (_, _) => { if (signupWeb is null) address.Text = DisplayBrowserAddress(core.Source); };
             core.WindowCloseRequested += (_, _) => Close();
             core.NavigationCompleted += async (_, args) =>
             {
@@ -318,7 +319,9 @@ public sealed partial class AccountBrowser : Window
             if (disposed) return false;
             Title = "Roblox · @" + identity.Name + " · Account browser";
             status.Text = "Connected @" + identity.Name + ". You can close this browser and launch games from the manager.";
-            loginMode = false; loginTimer.Stop(); login = null; lastAttemptedCookie = null; skipLogin.Visibility = Visibility.Collapsed;
+            loginMode = false; CancelEmailLogin();
+            if (pendingEmailBinding is { } binding && gmail is not null) { try { gmail.Bind(account, binding.Connection, binding.Address, true); } catch { status.Text = "Signed in. The local email association could not be saved."; } pendingEmailBinding = null; }
+            loginTimer.Stop(); login = null; lastAttemptedCookie = null; skipLogin.Visibility = Visibility.Collapsed;
             loginComplete.TrySetResult(LoginOutcome.Connected);
             return true;
         }
@@ -328,6 +331,7 @@ public sealed partial class AccountBrowser : Window
 
     public async Task BeginLogin(LoginCredential? credential, string progress, bool allowSkip = false)
     {
+        CancelEmailLogin();
         await ClearSession();
         if (disposed) { loginComplete.TrySetResult(LoginOutcome.Stopped); return; }
         loginComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -336,6 +340,7 @@ public sealed partial class AccountBrowser : Window
         skipLogin.Visibility = allowSkip ? Visibility.Visible : Visibility.Collapsed;
         Title = "Roblox sign in · " + progress;
         status.Text = progress + " · Complete the Roblox login." + (allowSkip ? " Skip account moves to the next login without saving this one." : "") + " Close this browser to stop the queue.";
+        await PrepareEmailLogin();
         ShowForUser();
         Navigate("https://www.roblox.com/login"); loginTimer.Start();
     }
@@ -343,6 +348,7 @@ public sealed partial class AccountBrowser : Window
     private void SkipLogin()
     {
         if (disposed || !loginMode || skipLogin.Visibility != Visibility.Visible || loginComplete.Task.IsCompleted) return;
+        CancelEmailLogin();
         loginAbandoned = true; loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop();
         skipLogin.IsEnabled = false;
         loginComplete.TrySetResult(LoginOutcome.Skipped);

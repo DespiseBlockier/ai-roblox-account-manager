@@ -101,6 +101,39 @@ public sealed class RobloxApi : IDisposable
         return new(id, name, display);
     }
 
+    public async Task<RobloxEmailInfo> EmailInfo(string cookie)
+    {
+        using var response = await Send(HttpMethod.Get, "https://accountsettings.roblox.com/v1/email", cookie);
+        using var json = await Json(response); var root = json.RootElement;
+        string address = root.TryGetProperty("emailAddress", out var email) && email.ValueKind == JsonValueKind.String ? email.GetString()! : "";
+        if (address.Length > 0) address = GmailAddress.Normalize(address);
+        if (!root.TryGetProperty("verified", out var verified) || verified.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new UserError("Roblox returned an unknown email status.");
+        return new(address, verified.ValueKind == JsonValueKind.True);
+    }
+    public Task SetEmail(string cookie, string address, string password, CancellationToken cancel) =>
+        EmailPost("https://accountsettings.roblox.com/v1/email", cookie, new { emailAddress = GmailAddress.Normalize(address), password, skipVerificationEmail = false }, cancel);
+    public Task ResendEmailVerification(string cookie, CancellationToken cancel) =>
+        EmailPost("https://accountsettings.roblox.com/v1/email/verify", cookie, new { }, cancel);
+    private async Task EmailPost(string url, string cookie, object body, CancellationToken cancel)
+    {
+        if (!Security.IsApiUrl(new Uri(url)) || cookie.Length is < 1 or > 20000 || cookie.Any(c => char.IsControl(c) || c == ';')) throw new UserError("A valid Roblox session is required to link email.");
+        async Task<HttpResponseMessage> Post(string? csrf)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json") };
+            request.Headers.Add("Cookie", ".ROBLOSECURITY=" + cookie); request.Headers.Referrer = new Uri("https://www.roblox.com/");
+            if (csrf is not null) request.Headers.Add("X-CSRF-TOKEN", csrf);
+            return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
+        }
+        using var first = await Post(null);
+        if (first.StatusCode == HttpStatusCode.Forbidden && !first.Headers.Contains("rblx-challenge-type") && first.Headers.TryGetValues("x-csrf-token", out var values))
+        {
+            string csrf = values.Single();
+            if (csrf.Length is < 1 or > 8192 || csrf.Any(char.IsControl)) throw new UserError("Roblox returned invalid email authorization.");
+            using var second = await Post(csrf); Check(second); return;
+        }
+        Check(first);
+    }
+
     public async Task<ModerationRestriction?> Restriction(string cookie)
     {
         using var response = await Send(HttpMethod.Get, "https://usermoderation.roblox.com/v1/not-approved", cookie);

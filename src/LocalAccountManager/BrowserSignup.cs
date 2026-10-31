@@ -23,6 +23,7 @@ public sealed class SignupRequest
     public bool AcceptTerms { get; set; }
     public string ApiKey { get; set; } = "";
     public string Provider { get; set; } = "solvex"; // Preserve existing explicitly run Solvex scripts.
+    public SignupEmail? Email { get; set; }
     public SignupProxy? Proxy { get; set; }
     public override string ToString() => "SignupRequest [redacted]";
     public void Validate()
@@ -32,6 +33,7 @@ public sealed class SignupRequest
         if (Password is null || Password.Length < 8 || Password.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter a Roblox password of at least eight characters.");
         if (!DateOnly.TryParseExact(Birthday, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var birthday) || birthday > DateOnly.FromDateTime(DateTime.UtcNow) || birthday.Year < 1900) throw new UserError("Enter your real birthday as YYYY-MM-DD.");
         if (!AcceptTerms) throw new UserError("Read Roblox's terms and privacy policy, then set acceptTerms to true to sign up.");
+        Email?.Validate();
         _ = BrowserSolverClient.ProviderHost(Provider);
         if (string.IsNullOrWhiteSpace(ApiKey) || ApiKey.Length > 512 || ApiKey.Any(char.IsControl) || ApiKey.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter your own " + BrowserSolverClient.ProviderName(Provider) + " API key.");
         if (Proxy is null)

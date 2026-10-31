@@ -47,7 +47,7 @@ public partial class MainWindow
                 state.Settings.AutomaticUpdates = enabled;
                 try { vault.Save(state); }
                 catch { state.Settings.AutomaticUpdates = previous; throw; }
-            });
+            }, OpenGmail);
             saved = dialog.ShowDialog() == true;
             return Task.CompletedTask;
         });

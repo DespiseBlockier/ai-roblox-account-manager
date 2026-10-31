@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     private readonly AppState state;
     private readonly RobloxApi api;
     private readonly BrowserHub browsers;
+    private readonly GmailService gmail;
     private readonly AccountEnrollment enrollment;
     private readonly LoginQueue loginQueue = new();
     private readonly DispatcherTimer sessionTimer = new() { Interval = TimeSpan.FromMinutes(5) };
@@ -35,7 +36,8 @@ public partial class MainWindow : Window
         int removed = AccountEnrollment.RemoveLegacyPlaceholders(state);
         if (removed > 0) vault.Save(state);
         enrollment = new AccountEnrollment(state, () => vault.Save(state));
-        browsers = new BrowserHub(vault, this.api, Connected, AddBrowserAccount);
+        gmail = new GmailService(state, () => vault.Save(state));
+        browsers = new BrowserHub(vault, this.api, Connected, AddBrowserAccount, gmail);
         InitializeComponent();
         Refresh();
         UpdateProtectionLabel();
@@ -57,9 +59,15 @@ public partial class MainWindow : Window
                 catch (Exception ex) { e.Cancel = true; Status.Text = "Notes could not be saved. " + Security.Friendly(ex); }
             }
         };
-        Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); moderationClock.Stop(); automaticUpdateTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); DisableMulti(); this.api.Dispose(); };
+        Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); moderationClock.Stop(); automaticUpdateTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); gmail.Dispose(); DisableMulti(); this.api.Dispose(); };
     }
 
+    private void OpenGmail(Window owner)
+    {
+        new GmailWindow(owner, vault, state, gmail, AccountsGrid.SelectedItems.Cast<Account>().ToList()).ShowDialog();
+        Refresh();
+    }
+    private async void Gmail_Click(object sender, RoutedEventArgs e) => await Run(() => { OpenGmail(this); return Task.CompletedTask; });
     private void UpdateProtectionLabel()
     {
         ProtectionStatus.Text = vault.UsesMasterPassword ? "●  Master password" + (state.Authentication.Enabled ? " + Authenticator 2FA" : " protection") + " · Portable" : "⚠  No master password · Not recommended";
@@ -472,12 +480,13 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => ThemedMessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.9.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection and authenticator unlock checks\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates, with optional automatic installation\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable " + typeof(MainWindow).Assembly.GetName().Version?.ToString(3) +
+        "\n\n• Single and bulk sign-in queues\n• Optional master-password protection and authenticator unlock checks\n• Session, age-group and ban checks\n• Optional read-only Gmail connection for Roblox verification\n• Publisher-signed updates\n• No remote control server, telemetry or plugins\n\nRemaining verification steps stay in Roblox's visible browser. Layout exports exclude passwords, cookies and Google access. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. Source and attribution are included with the release. See LICENSE, NOTICE.md and README.md in Docs.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>
         {
-            var merged = new AppState { Accounts = [.. state.Accounts], Favorites = [.. state.Favorites], Recent = [.. state.Recent] };
+            var merged = new AppState { Gmail = state.Gmail, Authentication = state.Authentication, Settings = state.Settings, Accounts = [.. state.Accounts], Favorites = [.. state.Favorites], Recent = [.. state.Recent] };
             // Re-key imported entries: a layout backup must never bind to an unrelated local browser profile.
             foreach (var a in restored.Accounts)
             {

@@ -39,7 +39,7 @@ public sealed record BrowserCodeRequest(string Url, string Code, TimeSpan Timeou
 
 public enum BrowserCodeOutcome { Completed, Stopped, Failed }
 public sealed record BrowserCodeResult(BrowserCodeOutcome Outcome, string Message);
-public sealed record BrowserCodeState(string Phase, string Message, List<SolverRequest>? Requests = null, List<AddAccountRequest>? Accounts = null, List<SignupRequest>? Signups = null);
+public sealed record BrowserCodeState(string Phase, string Message, List<SolverRequest>? Requests = null, List<AddAccountRequest>? Accounts = null, List<SignupRequest>? Signups = null, List<EmailRequest>? Emails = null);
 
 public static class BrowserCodeRuntime
 {
@@ -66,9 +66,10 @@ public static class BrowserCodeRuntime
                 if (phase === 'done' || phase === 'stopped' || phase === 'failed') return;
                 phase = next; message = text(value);
               };
-            """ + "\n" + BrowserSolverRuntime.Source + "\n" + """
+            """ + "\n" + BrowserSolverRuntime.Source + "\n" + BrowserEmailScripts.RpcSource + "\n" + """
               const ram = Object.freeze({
                 addAccount: requestAddAccount, createAccount: requestCreateAccount,
+                email: Object.freeze({list: () => requestEmail('list'), waitForCode: options => requestEmail('waitForCode', options), linkAndVerify: options => requestEmail('linkAndVerify', options)}),
                 account: identity === null ? null : Object.freeze(identity), signal: abort.signal,
                 twocaptcha: Object.freeze({register: (key, options) => registerSolver('2captcha', key, options)}),
                 anticaptcha: Object.freeze({register: (key, options) => registerSolver('anticaptcha', key, options)}),
@@ -85,9 +86,10 @@ public static class BrowserCodeRuntime
                 })
               });
               Object.defineProperty(window, key, {configurable:true, enumerable:false, value:Object.freeze({
-                snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4), accounts:accountOutbox.splice(0,1), signups:signupOutbox.splice(0,1)}),
+                snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4), accounts:accountOutbox.splice(0,1), signups:signupOutbox.splice(0,1), emails:emailOutbox.splice(0,1)}),
                 reply: (id, result) => { const call = solverPending.get(id); if (call) { solverPending.delete(id); call.resolve(result); } },
                 replySignup: (id, result) => { const call = signupPending.get(id); if (call) { signupPending.delete(id); if (!result.success) signupFailed = true; result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not create the account.')); } },
+                replyEmail: (id, result) => { const call = emailPending.get(id); if (call) { emailPending.delete(id); result.success ? call.resolve(result.value) : call.reject(new Error(result.error || 'Email operation failed.')); } },
                 replyAccount: (id, result) => { const call = accountPending.get(id); if (call) { accountPending.delete(id); result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not save the current account.')); } },
                 stop: () => { abort.abort(); finish('stopped', 'Stopped'); }
               })});
@@ -123,6 +125,11 @@ public static class BrowserCodeRuntime
         if (id < 1) throw new UserError("Invalid signup identifier.");
         return "window[" + Key(key) + "]?.replySignup(" + id.ToString(CultureInfo.InvariantCulture) + "," + JsonSerializer.Serialize(response) + ");";
     }
+    public static string ReplyEmail(string key, int id, object response)
+    {
+        if (id < 1) throw new UserError("Invalid email request identifier.");
+        return "window[" + Key(key) + "]?.replyEmail(" + id.ToString(CultureInfo.InvariantCulture) + "," + JsonSerializer.Serialize(response) + ");";
+    }
     public static BrowserCodeState Parse(string json)
     {
         if (json.Length > 280_000) throw new UserError("Browser code returned too much status data.");
@@ -155,7 +162,14 @@ public static class BrowserCodeRuntime
                 signups = JsonSerializer.Deserialize<List<SignupRequest>>(registrations.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 foreach (var signup in signups ?? []) { if (signup is null || signup.Id < 1) throw new UserError("Invalid signup request."); }
             }
-            return new(phase, message, requests, accounts, signups);
+            List<EmailRequest>? emails = null;
+            if (doc.RootElement.TryGetProperty("emails", out var mail))
+            {
+                if (mail.ValueKind != JsonValueKind.Array || mail.GetArrayLength() > 1 || mail.GetRawText().Length > 4096) throw new UserError("Only one email operation can run at a time.");
+                emails = JsonSerializer.Deserialize<List<EmailRequest>>(mail.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                foreach (var email in emails ?? []) { if (email is null) throw new UserError("Invalid email request."); email.Validate(); }
+            }
+            return new(phase, message, requests, accounts, signups, emails);
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
         { throw new UserError("Could not read browser-code status. The queue stopped."); }

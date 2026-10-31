@@ -10,7 +10,7 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.12.1</Version>
+    <Version>1.13.0</Version>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishSingleFile>true</PublishSingleFile>
@@ -27,6 +27,8 @@
     <EmbeddedResource Include="Assets/UpdatePublicKey.bin" LogicalName="LocalAccountManager.UpdatePublicKey" />
     <EmbeddedResource Include="Assets/BrowserSolvers.js" LogicalName="LocalAccountManager.BrowserSolvers.js" />
     <EmbeddedResource Include="Assets/BrowserSignup.js" LogicalName="LocalAccountManager.BrowserSignup.js" />
+    <EmbeddedResource Include="Assets/BrowserEmail.js" LogicalName="LocalAccountManager.BrowserEmail.js" />
+    <EmbeddedResource Include="Assets/BrowserEmailRpc.js" LogicalName="LocalAccountManager.BrowserEmailRpc.js" />
     <Resource Include="Assets/AppIcon.ico" />
   </ItemGroup>
 </Project>

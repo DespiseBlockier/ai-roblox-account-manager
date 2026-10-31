@@ -15,7 +15,9 @@ public sealed partial class AccountBrowser
     // signup view navigates. Every registration gets a fresh private browser profile.
     private async Task<object> CreateAccountInBrowser(SignupRequest call, BrowserSolverClient solvers, Action<string> progress, CancellationToken cancel)
     {
-        call.Validate(); cancel.ThrowIfCancellationRequested(); signupActive = true; signupInitializing = true; signupControlsBrowser = true;
+        call.Validate();
+        if (call.Email is { } email) { if (gmail is null) throw new UserError("Connect Gmail in Settings before creating an account with email verification."); var connected = gmail.Resolve(email.Mailbox); _ = gmail.Recipient(connected, email.Address); }
+        cancel.ThrowIfCancellationRequested(); signupActive = true; signupInitializing = true; signupControlsBrowser = true;
         signupWeb?.Dispose();
         if (signupWeb is not null) browserSurface.Children.Remove(signupWeb);
         var view = new WebView2 { Name = "SignupBrowser" }; signupWeb = view;
@@ -53,7 +55,7 @@ public sealed partial class AccountBrowser
             core.LaunchingExternalUriScheme += (_, e) => e.Cancel = true;
             core.NavigationStarting += (_, e) => { if (!Security.IsBrowserPage(e.Uri) && e.Uri != "about:blank") e.Cancel = true; };
             core.NewWindowRequested += (_, e) => { e.Handled = true; if (Security.IsBrowserPage(e.Uri)) core.Navigate(e.Uri); };
-            core.SourceChanged += (_, _) => { if (!disposed) address.Text = core.Source; };
+            core.SourceChanged += (_, _) => { if (!disposed) address.Text = DisplayBrowserAddress(core.Source); };
             core.WindowCloseRequested += (_, _) => Close();
             core.BasicAuthenticationRequested += (_, e) =>
             {
@@ -104,7 +106,14 @@ public sealed partial class AccountBrowser
                     if (!disposed && !cancel.IsCancellationRequested)
                         try { await RestoreSession(cookie); } catch { /* The verified account is already committed to the vault. */ }
                     Report("Created and saved @" + saved.Username + " from the visible browser.");
-                    return new { success = true, saved = true, userId = saved.UserId.ToString(CultureInfo.InvariantCulture), username = saved.Username };
+                    bool? emailVerified = null; string? emailError = null;
+                    if (call.Email is { } requestedEmail)
+                    {
+                        try { emailVerified = await VerifyEmailInBrowser(core, proxiedIdentityApi ?? api, identity, cookie, requestedEmail, call.Password, false, Report, cancel); }
+                        catch (OperationCanceledException) { throw; }
+                        catch (Exception ex) { emailVerified = false; emailError = GmailWindow.Friendly(ex); Report("Account created and saved. " + emailError); }
+                    }
+                    return new { success = true, saved = true, userId = saved.UserId.ToString(CultureInfo.InvariantCulture), username = saved.Username, emailVerified, emailError };
                 }
                 if (Security.IsBrowserPage(core.Source))
                 {

@@ -22,6 +22,9 @@ public sealed partial class AccountBrowser
         var solverIds = new HashSet<int>();
         Task? accountSave = null;
         Task? signupJob = null;
+        Task? emailJob = null;
+        DateTimeOffset codeStarted = DateTimeOffset.UtcNow;
+        var emailIds = new HashSet<int>();
         bool signupFailed = false;
         var signupIds = new HashSet<int>();
         var accountRequestIds = new HashSet<int>();
@@ -64,6 +67,50 @@ public sealed partial class AccountBrowser
             if (!disposed && !token.IsCancellationRequested)
                 try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplySignup(key, call.Id, reply)); } catch { }
         }
+        async Task Email(EmailRequest call)
+        {
+            object reply;
+            try
+            {
+                call.Validate();
+                if (gmail is null) throw new UserError("Connect Gmail in Settings to use email helpers.");
+                object value;
+                if (call.Action == "list") value = gmail.List();
+                else
+                {
+                    var connection = gmail.Resolve(call.Mailbox); string recipient = gmail.Recipient(connection, call.Address);
+                    if (call.Action == "waitForCode")
+                    {
+                        var prompt = await EmailPrompt(token);
+                        string expected = !IsGuest ? account.Username : prompt.Username;
+                        string username = call.Username.Length > 0 ? call.Username : expected;
+                        if (username.Length == 0 || expected.Length > 0 && !expected.Equals(username, StringComparison.OrdinalIgnoreCase) ||
+                            IsGuest && expected.Length == 0 && !gmail.KnownLogin(connection, username, recipient))
+                            throw new UserError("Email codes must match this account, its observed login, or a saved Gmail-associated account.");
+                        var message = await gmail.Wait(connection, username, recipient, RobloxMailPurpose.LoginCode, codeStarted, TimeSpan.FromSeconds(call.TimeoutSeconds), token);
+                        token.ThrowIfCancellationRequested();
+                        gmail.Consume(connection, message); value = new { code = message.Value, receivedAt = message.Received };
+                    }
+                    else
+                    {
+                        signupActive = true;
+                        string cookie = await ReadSession().WaitAsync(token); var identity = await api.Identity(cookie).WaitAsync(token);
+                        if (!IsGuest && identity.Id != account.UserId || await ReadSession().WaitAsync(token) != cookie) throw new UserError("This browser does not match the account being linked.");
+                        var saved = gmail.SavedAccount(identity);
+                        var core = await OpenEmailView(cookie, token);
+                        bool verified = await VerifyEmailInBrowser(core, api, identity, cookie, new SignupEmail { Mailbox = connection.Id.ToString("D"), Address = recipient }, saved.SavedPassword, call.ReplaceExisting,
+                            message => { if (!disposed) { status.Text = message; progress(message); } }, token);
+                        value = new { verified, address = recipient, username = identity.Name };
+                    }
+                }
+                reply = new { success = true, value };
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) { reply = new { success = false, error = GmailWindow.Friendly(ex) }; }
+            finally { signupActive = signupInitializing = false; }
+            if (!disposed && !token.IsCancellationRequested)
+                try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplyEmail(key, call.Id, reply)); } catch { }
+        }
         async Task Solve(SolverRequest call)
         {
             try
@@ -86,6 +133,7 @@ public sealed partial class AccountBrowser
             ShowForUser();
             Title = IsGuest ? "Browser code · Guest" : "Browser code · @" + account.Username;
             Report("Loading the requested Roblox page…");
+            await InstallEmailObserver(IsGuest ? "" : account.Username, token);
             await LoadCodePage(request.Url, token);
             if (!IsGuest) { Report("Verifying the selected account before running code…"); await VerifyCodeIdentity(token); }
             string installed = await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Install(key, account, request.Code, IsGuest)).WaitAsync(TimeSpan.FromSeconds(5), token);
@@ -108,13 +156,18 @@ public sealed partial class AccountBrowser
                 if (state.Accounts is { Count: > 0 } additions)
                 {
                     var call = additions[0];
-                    if (signupActive || signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
+                    if (signupActive || emailJob is { IsCompleted: false } || signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
                     accountSave = AddCurrentAccount(call);
                 }
                 if (state.Signups is { Count: > 0 } signups)
                 {
-                    if (signupFailed || signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !signupIds.Add(signups[0].Id)) throw new UserError("Signups must run sequentially and stop after a failed attempt.");
+                    if (signupFailed || emailJob is { IsCompleted: false } || signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !signupIds.Add(signups[0].Id)) throw new UserError("Signups must run sequentially and stop after a failed attempt.");
                     signupJob = CreateAccount(signups[0]);
+                }
+                if (state.Emails is { Count: > 0 } emails)
+                {
+                    if (signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || emailJob is { IsCompleted: false } || !emailIds.Add(emails[0].Id)) throw new UserError("Await each email/signup operation before starting another.");
+                    emailJob = Email(emails[0]);
                 }
                 solverJobs.RemoveAll(job => job.IsCompleted);
                 if (state.Requests is { Count: > 0 } calls)
@@ -157,7 +210,7 @@ public sealed partial class AccountBrowser
         finally
         {
             linked.Cancel();
-            try { await Task.WhenAll(solverJobs.Concat(new[] { accountSave, signupJob }.OfType<Task>())).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+            try { await Task.WhenAll(solverJobs.Concat(new[] { accountSave, signupJob, emailJob }.OfType<Task>())).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
             signupActive = signupInitializing = signupControlsBrowser = false;
             IsCodeRunning = false;
             if (!disposed)

@@ -17,6 +17,11 @@ public sealed class Account
     public string SavedJob { get; set; } = "";
     public string SavedPassword { get; set; } = "";
     public string SessionCookie { get; set; } = "";
+    public Guid? GmailConnectionId { get; set; }
+    public string EmailAddress { get; set; } = "";
+    public bool AutoEmailCodes { get; set; }
+    public DateTimeOffset? EmailVerifiedAt { get; set; }
+    [JsonIgnore] public string EmailLabel => EmailAddress.Length == 0 ? "Not linked" : EmailAddress + (EmailVerifiedAt is null ? " · Not verified by manager" : " · Last verified " + EmailVerifiedAt.Value.ToLocalTime().ToString("g"));
     public bool SessionNeedsRestore { get; set; }
     public string AgeGroup { get; set; } = "Unknown";
     public bool? IsAgeChecked { get; set; }
@@ -66,6 +71,7 @@ public sealed class AppState
 {
     public int Version { get; set; } = 2;
     public VaultAuthentication Authentication { get; set; } = new();
+    public GmailSettings Gmail { get; set; } = new();
     public AppSettings Settings { get; set; } = new();
     public List<Account> Accounts { get; set; } = [];
     public List<GameBookmark> Favorites { get; set; } = [];

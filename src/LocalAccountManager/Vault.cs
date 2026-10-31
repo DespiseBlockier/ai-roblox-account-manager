@@ -87,8 +87,9 @@ public sealed partial class Vault : IDisposable
     public void Save(AppState state)
     {
         RequireUnlocked();
-        if (state.Version != 2) throw new UserError("The account database must be migrated before saving.");
+        if (state.Version is not (2 or 3)) throw new UserError("The account database must be migrated before saving.");
         Validate(state);
+        if (state.Gmail.Client.ClientId.Length > 0 || state.Gmail.Connections.Count > 0) state.Version = 3;
         CheckAuthenticationUnchanged(state);
         byte[] clear = JsonSerializer.SerializeToUtf8Bytes(state);
         try
@@ -122,6 +123,7 @@ public sealed partial class Vault : IDisposable
         RequireUnlocked();
         if (newPassword is not null && newPassword.Length is < 1 or > 1024) throw new UserError("Enter a master password of 1–1024 characters, or choose No master password.");
         Validate(state);
+        if (state.Gmail.Client.ClientId.Length > 0 || state.Gmail.Connections.Count > 0) state.Version = 3;
         CheckAuthenticationUnchanged(state);
         if (newPassword is null && state.Authentication.Enabled) throw new UserError("Disable authenticator 2FA before removing the master password.");
         if (!unprotected)
@@ -232,15 +234,16 @@ public sealed partial class Vault : IDisposable
         try { state = JsonSerializer.Deserialize<AppState>(bytes) ?? throw new JsonException(); }
         catch (JsonException) { throw new UserError("The saved data is invalid. The original file has been preserved."); }
         Validate(state);
-        state.Version = 2; // Read v1 safely; every subsequent vault save is unreadable by the old app.
+        state.Version = state.Gmail.Client.ClientId.Length > 0 || state.Gmail.Connections.Count > 0 || state.Version == 3 ? 3 : 2; // Older apps must not discard Gmail tokens.
         return state;
     }
 
     public static void Validate(AppState state)
     {
         Authenticator.Validate(state.Authentication);
+        GmailAddress.Validate(state.Gmail);
         if (state.Settings is null) throw new UserError("The saved app settings are invalid.");
-        if (state.Version is not (1 or 2) || state.Accounts is null || state.Favorites is null || state.Recent is null ||
+        if (state.Version is not (1 or 2 or 3) || state.Accounts is null || state.Favorites is null || state.Recent is null ||
             state.Accounts.Count > 2000 || state.Favorites.Count > 2000 || state.Recent.Count > 30)
             throw new UserError("The data file has an unsupported format or exceeds the account limit.");
         var ids = new HashSet<Guid>();
@@ -250,7 +253,9 @@ public sealed partial class Vault : IDisposable
                 !Text(a.Username, 100) || !Text(a.DisplayName, 100) || !Text(a.Alias, 80) || !Text(a.Group, 80) ||
                 !Text(a.Notes, 4000) || !Text(a.SavedTarget, 4096) || !Text(a.SavedJob, 40) ||
                 !Text(a.SavedPassword, 1024) || !Text(a.SessionCookie, 20000) || a.SessionCookie.Any(c => char.IsControl(c) || c == ';') ||
-                !AgeGroups.IsValid(a.AgeGroup)) throw new UserError("The account data is invalid.");
+                !AgeGroups.IsValid(a.AgeGroup) || !Text(a.EmailAddress, 254)) throw new UserError("The account data is invalid.");
+            if (a.EmailAddress.Length > 0) _ = GmailAddress.Normalize(a.EmailAddress);
+            if (a.GmailConnectionId is Guid mailbox && !state.Gmail.Connections.Any(c => c.Id == mailbox)) throw new UserError("An account refers to a missing Gmail connection.");
             if (a.Restriction is { } restriction && (!Text(restriction.Reason, 4000) ||
                 (restriction.Began is { } start && restriction.Ends is { } end && end < start)))
                 throw new UserError("The saved moderation data is invalid.");

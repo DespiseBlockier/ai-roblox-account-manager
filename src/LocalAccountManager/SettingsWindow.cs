@@ -5,7 +5,7 @@ namespace LocalAccountManager;
 
 public sealed class SettingsWindow : Window
 {
-    public SettingsWindow(Window owner, AppSettings settings, Action<bool> save)
+    public SettingsWindow(Window owner, AppSettings settings, Action<bool> save, Action<Window>? openGmail = null)
     {
         Style = (Style)FindResource(typeof(Window)); Owner = owner; Title = "Settings";
         Width = 550; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -13,6 +13,7 @@ public sealed class SettingsWindow : Window
         panel.Children.Add(new TextBlock { Text = "Settings", FontSize = 24, FontWeight = FontWeights.SemiBold });
         var automatic = new CheckBox { Name = "AutomaticUpdates", Content = "Automatically install updates", IsChecked = settings.AutomaticUpdates, Margin = new Thickness(0, 22, 0, 10) }; panel.Children.Add(automatic);
         panel.Children.Add(new TextBlock { Text = "Off by default. When enabled, verified updates download, install, and restart the manager automatically. Checks run at startup and every 30 minutes. Installation waits for login queues, browsers, and dialogs to close. Your account data stays in place.", TextWrapping = TextWrapping.Wrap });
+        if (openGmail is not null) { var gmailButton = new Button { Name = "GmailSettings", Content = "Gmail connections…", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 18, 0, 0) }; gmailButton.Click += (_, _) => openGmail(this); panel.Children.Add(gmailButton); }
         var feedback = new TextBlock { Name = "SettingsFeedback", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) }; panel.Children.Add(feedback);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 20, 0, 0) };
         buttons.Children.Add(new Button { Content = "Cancel", IsCancel = true });
