@@ -27,7 +27,7 @@ public sealed class BrowserCodeWindow : Window
     private BrowserCodeExamplesWindow? examplesWindow;
     private readonly Button start = new() { Name = "StartCodeRun", Content = "Run on selected accounts" };
     private readonly Button stop = new() { Content = "Stop queue", IsEnabled = false };
-    private readonly DataGrid results = new() { RowHeight = 42, SelectionMode = DataGridSelectionMode.Single };
+    private readonly DataGrid results = new() { RowHeight = double.NaN, MinRowHeight = 42, SelectionMode = DataGridSelectionMode.Single };
     private readonly TextBlock feedback = new() { Name = "RunFeedback", Text = "Ready. Code runs with the selected Roblox session's permissions. Run code you trust.", TextWrapping = TextWrapping.Wrap };
     private readonly ObservableCollection<BrowserCodeRow> rows;
     private readonly BrowserCodeQueue queue = new();
@@ -98,7 +98,10 @@ public sealed class BrowserCodeWindow : Window
         Grid.SetRow(editor, 1); root.Children.Add(editor);
         results.Columns.Add(new DataGridTextColumn { Header = "ACCOUNT", Binding = new Binding("Username"), Width = 160 });
         results.Columns.Add(new DataGridTextColumn { Header = "RESULT", Binding = new Binding("Result"), Width = 100 });
-        results.Columns.Add(new DataGridTextColumn { Header = "STATUS", Binding = new Binding("Message"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        var messageStyle = new Style(typeof(TextBlock));
+        messageStyle.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        messageStyle.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding("Message")));
+        results.Columns.Add(new DataGridTextColumn { ElementStyle = messageStyle, Header = "STATUS", Binding = new Binding("Message"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         results.ItemsSource = rows; Grid.SetRow(results, 2); root.Children.Add(results);
         var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0) };

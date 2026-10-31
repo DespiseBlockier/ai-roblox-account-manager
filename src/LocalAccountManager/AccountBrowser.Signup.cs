@@ -15,7 +15,7 @@ public sealed partial class AccountBrowser
     // signup view navigates. Every registration gets a fresh private browser profile.
     private async Task<object> CreateAccountInBrowser(SignupRequest call, BrowserSolverClient solvers, Action<string> progress, CancellationToken cancel)
     {
-        call.Validate(); cancel.ThrowIfCancellationRequested(); signupActive = true; signupControlsBrowser = true;
+        call.Validate(); cancel.ThrowIfCancellationRequested(); signupActive = true; signupInitializing = true; signupControlsBrowser = true;
         signupWeb?.Dispose();
         if (signupWeb is not null) browserSurface.Children.Remove(signupWeb);
         var view = new WebView2 { Name = "SignupBrowser" }; signupWeb = view;
@@ -42,6 +42,7 @@ public sealed partial class AccountBrowser
             var controller = signupEnvironment.CreateCoreWebView2ControllerOptions();
             controller.ProfileName = "Signup" + Guid.NewGuid().ToString("N"); controller.IsInPrivateModeEnabled = true;
             await view.EnsureCoreWebView2Async(signupEnvironment, controller).WaitAsync(TimeSpan.FromSeconds(30), cancel);
+            signupInitializing = false;
             var core = view.CoreWebView2;
             core.Settings.AreHostObjectsAllowed = false; core.Settings.IsWebMessageEnabled = false;
             core.Settings.AreDevToolsEnabled = false; core.Settings.AreDefaultContextMenusEnabled = false;
@@ -69,13 +70,17 @@ public sealed partial class AccountBrowser
             core.FrameCreated += (_, e) => Track(e.Frame);
             await core.AddScriptToExecuteOnDocumentCreatedAsync(BrowserSignupScripts.Install(key));
             signupReady?.Invoke(core);
-            core.Navigate("https://www.roblox.com/signup"); view.Focus();
+
             using var proxiedIdentityApi = call.Proxy is null ? null : new RobloxApi(new HttpClientHandler
             {
                 AllowAutoRedirect = false, UseCookies = false, UseProxy = true,
                 Proxy = new WebProxy(new Uri(call.Proxy.Type + "://" + call.Proxy.Address + ":" + call.Proxy.Port.ToString(CultureInfo.InvariantCulture)))
                 { Credentials = string.IsNullOrEmpty(call.Proxy.Login) ? null : new NetworkCredential(call.Proxy.Login, call.Proxy.Password) }
             });
+            Report("Checking whether Roblox allows this username…");
+            await (proxiedIdentityApi ?? api).CheckSignupUsername(call.Username, call.Birthday, cancel);
+            cancel.ThrowIfCancellationRequested();
+            core.Navigate("https://www.roblox.com/signup"); view.Focus();
             DateTimeOffset opened = DateTimeOffset.UtcNow;
             while (true)
             {
@@ -101,13 +106,18 @@ public sealed partial class AccountBrowser
                     Report("Created and saved @" + saved.Username + " from the visible browser.");
                     return new { success = true, saved = true, userId = saved.UserId.ToString(CultureInfo.InvariantCulture), username = saved.Username };
                 }
-                if (!submitted && Security.IsBrowserPage(core.Source))
+                if (Security.IsBrowserPage(core.Source))
                 {
                     using var filled = JsonDocument.Parse(await core.ExecuteScriptAsync(BrowserSignupScripts.Fill(key, call)).WaitAsync(TimeSpan.FromSeconds(5), cancel));
                     string phase = filled.RootElement.ValueKind == JsonValueKind.Object && filled.RootElement.TryGetProperty("phase", out var state) ? state.GetString() ?? "" : "";
-                    submitted = phase == "submitted";
-                    if (submitted) Report("Signup submitted by the visible browser. Waiting for Roblox verification…");
-                    else if (phase == "review" || DateTimeOffset.UtcNow - opened > TimeSpan.FromSeconds(20)) Report("Review the signup fields in the visible browser. The app submits its filled form once; complete any remaining steps there.");
+                    if (phase == "username-taken") throw new UserError("This username is already taken. Choose a different username.");
+                    if (phase == "username-inappropriate") throw new UserError("Roblox says this username is not appropriate. Choose a different username.");
+                    if (phase == "username-rejected") throw new UserError("Roblox rejected this username in the signup form. Choose a different username.");
+                    bool justSubmitted = !submitted && phase == "submitted";
+                    submitted |= phase == "submitted";
+                    if (phase == "validating") Report("Waiting for Roblox to validate the signup fields…");
+                    if (justSubmitted) Report("Signup submitted by the visible browser. Waiting for Roblox verification…");
+                    else if (!submitted && (phase == "review" || DateTimeOffset.UtcNow - opened > TimeSpan.FromSeconds(20))) Report("Review the signup fields in the visible browser. The app submits its filled form once; complete any remaining steps there.");
                 }
                 if (!solverAttempted && submitted)
                 {
@@ -148,7 +158,9 @@ public sealed partial class AccountBrowser
                             !result.TryGetProperty("token", out var token) || token.ValueKind != JsonValueKind.String || token.GetString()?.Length is not (> 0 and <= 20000))
                         {
                             string code = result.TryGetProperty("errorCode", out var error) && error.ValueKind == JsonValueKind.String && error.GetString() is string name && System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Z0-9_]{1,80}$") && !name.Contains(call.ApiKey, StringComparison.OrdinalIgnoreCase) ? name : "PROVIDER_ERROR";
-                            Report(BrowserSolverClient.ProviderName(call.Provider) + ": " + code + ". Complete verification in the browser or stop. No extra solver task will be created.");
+                            Report(code == "ERROR_CAPTCHA_UNSOLVABLE" || code == "CAPTCHA_UNSOLVABLE"
+                                ? BrowserSolverClient.ProviderName(call.Provider) + ": " + code + ". Provider could not solve it. Click Start puzzle in the browser and finish manually, or stop. No paid retry."
+                                : BrowserSolverClient.ProviderName(call.Provider) + ": " + code + ". Finish verification in the browser or stop. No paid retry.");
                         }
                         else
                         {
@@ -161,11 +173,11 @@ public sealed partial class AccountBrowser
                         break;
                     }
                 }
-                if (submitted && !solverAttempted) Report("Complete any verification shown in the browser. The app can use a solver when Roblox exposes a readable Arkose callback.");
+                if (submitted && !solverAttempted) Report("Complete any verification shown in the browser. A solver is used only after Arkose reports the challenge is shown, with readable configuration.");
                 await Task.Delay(500, cancel);
             }
         }
-        finally { signupActive = false; }
+        finally { signupActive = signupInitializing = false; }
     }
 
     private static async Task<string?> SignupCookie(CoreWebView2 core, CancellationToken cancel)

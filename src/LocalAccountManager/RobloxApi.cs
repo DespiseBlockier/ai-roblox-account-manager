@@ -58,6 +58,37 @@ public sealed class RobloxApi : IDisposable
         return JsonDocument.Parse(buffer.ToArray());
     }
 
+    public async Task CheckSignupUsername(string username, string birthday, CancellationToken cancel)
+    {
+        cancel.ThrowIfCancellationRequested();
+        // Public validation only: never attach a session cookie, password, or solver key.
+        string url = "https://auth.roblox.com/v1/usernames/validate?request.username=" + Uri.EscapeDataString(username) +
+            "&request.birthday=" + Uri.EscapeDataString(birthday) + "&request.context=Signup";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
+        if (response.StatusCode == HttpStatusCode.TooManyRequests) throw new RobloxApiError(429, "Roblox is rate limiting username checks. Wait before trying again.");
+        if (!response.IsSuccessStatusCode) throw new UserError("Roblox could not check this username (HTTP " + (int)response.StatusCode + "). No signup was submitted.");
+        using var stream = await response.Content.ReadAsStreamAsync(cancel);
+        using var buffer = new MemoryStream(); byte[] block = new byte[1024]; int read;
+        while ((read = await stream.ReadAsync(block, cancel)) > 0)
+        {
+            if (buffer.Length + read > 8192) throw new UserError("Roblox returned an unexpected username check. No signup was submitted.");
+            buffer.Write(block, 0, read);
+        }
+        try
+        {
+            using var json = JsonDocument.Parse(buffer.ToArray());
+            if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("code", out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out int code) || code < 0)
+                throw new UserError("Roblox could not confirm this username. No signup was submitted.");
+            if (code == 1) throw new UserError("This username is already taken. Choose a different username.");
+            if (code == 2) throw new UserError("Roblox says this username is not appropriate. Choose a different username.");
+            if (code == 10) throw new UserError("Roblox says this username contains private information. Choose a different username.");
+            if (code == 12) throw new UserError("This username is not available. Choose a different username.");
+            if (code != 0) throw new UserError("Roblox rejected this username. Check its username rules and choose another.");
+        }
+        catch (JsonException) { throw new UserError("Roblox could not confirm this username. No signup was submitted."); }
+    }
+
     public async Task<RobloxIdentity> Identity(string cookie)
     {
         using var response = await Send(HttpMethod.Get, "https://users.roblox.com/v1/users/authenticated", cookie);

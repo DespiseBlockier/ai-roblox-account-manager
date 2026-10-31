@@ -60,7 +60,7 @@ public sealed partial class AccountBrowser
             }
             catch (OperationCanceledException) { return; }
             catch (Exception ex) { signupFailed = true; reply = new { success = false, error = Security.Friendly(ex) }; }
-            finally { call.ClearSecrets(); }
+            finally { signupInitializing = false; call.ClearSecrets(); }
             if (!disposed && !token.IsCancellationRequested)
                 try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplySignup(key, call.Id, reply)); } catch { }
         }
@@ -98,6 +98,9 @@ public sealed partial class AccountBrowser
             while (true)
             {
                 token.ThrowIfCancellationRequested();
+                // Initializing another controller can briefly stall script execution in the
+                // hidden caller. Keep native cancellation responsive without a premature poll timeout.
+                if (signupInitializing) { await Task.Delay(100, token); continue; }
                 if (!Security.IsBrowserPage(web.CoreWebView2.Source) || !IsGuest && LoginAutofill.IsLoginPage(web.CoreWebView2.Source))
                     throw new UserError("The browser left the signed-in Roblox page. The queue stopped.");
                 string raw = await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Read(key)).WaitAsync(TimeSpan.FromSeconds(5), token);
@@ -155,7 +158,7 @@ public sealed partial class AccountBrowser
         {
             linked.Cancel();
             try { await Task.WhenAll(solverJobs.Concat(new[] { accountSave, signupJob }.OfType<Task>())).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
-            signupActive = signupControlsBrowser = false;
+            signupActive = signupInitializing = signupControlsBrowser = false;
             IsCodeRunning = false;
             if (!disposed)
             {

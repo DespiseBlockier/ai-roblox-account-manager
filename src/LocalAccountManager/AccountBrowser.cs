@@ -152,6 +152,7 @@ public sealed partial class AccountBrowser : Window
     private readonly Grid browserSurface = new();
     private WebView2? signupWeb;
     private bool signupActive;
+    private bool signupInitializing;
     private bool signupControlsBrowser;
     private Action<CoreWebView2>? signupReady = null; // Native-only fixture injection, before any navigation.
     private Func<BrowserSolverClient> solverFactory = () => new BrowserSolverClient();
