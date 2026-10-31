@@ -85,8 +85,11 @@ public sealed class DataWindow : Window
         panel.Children.Add(new TextBlock { Text = "Your portable vault", FontSize = 21, FontWeight = FontWeights.SemiBold });
         panel.Children.Add(new TextBlock { Text = vault.Root, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 14) });
         panel.Children.Add(new TextBlock { Text = "Encrypted layout backups contain account labels, groups, notes, and game links. Browser sessions and passwords are not included. Restored accounts need to sign in again.", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "Backup password · at least 12 characters", Margin = new Thickness(0, 18, 0, 6) });
+        panel.Children.Add(new TextBlock { Text = "Backup password · 12+ characters recommended", Margin = new Thickness(0, 18, 0, 6) });
         var password = new PasswordBox { MaxLength = 1024 }; panel.Children.Add(password);
+        var shortWarning = new TextBlock { Text = "Not secure: short passwords are easier to guess. Use at least 12 characters for better protection.", Foreground = System.Windows.Media.Brushes.Salmon, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Visibility = Visibility.Collapsed };
+        password.PasswordChanged += (_, _) => shortWarning.Visibility = password.Password.Length is > 0 and < 12 ? Visibility.Visible : Visibility.Collapsed;
+        panel.Children.Add(shortWarning);
         var feedback = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 18, 0, 0) };
         var export = new Button { Content = "Export layout", Style = (Style)FindResource("Primary") };
@@ -95,7 +98,7 @@ public sealed class DataWindow : Window
         {
             try
             {
-                if (password.Password.Length < 12) throw new UserError("Use at least 12 characters for the backup password.");
+                if (password.Password.Length == 0) throw new UserError("Enter a backup password.");
                 var dialog = new SaveFileDialog { Filter = "Encrypted layout|*.ramlayout", FileName = "roblox-layout-" + DateTime.Now.ToString("yyyy-MM-dd") + ".ramlayout" };
                 if (dialog.ShowDialog(this) == true) { Vault.ExportLayout(dialog.FileName, state, password.Password); password.Clear(); feedback.Text = "Encrypted layout saved. Keep its password somewhere safe."; }
             }

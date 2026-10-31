@@ -56,7 +56,9 @@ Anyone with an unprotected Data folder can access the saved accounts.
 All account data is created in Data beside the EXE. Copy the ENTIRE folder to your USB.
 Protected vaults use the same master password on another Windows PC; Roblox may require a fresh login.
 Keep your master password safe. The app cannot recover it.
-Optional authenticator-app unlock checks are in Vault security. Save recovery codes separately.
+Optional authenticator-app unlock checks, with offline QR setup, are in Vault security.
+Save recovery codes separately. Short passwords are accepted but are less secure.
+Settings has optional automatic updates, off by default. Enabling it permits automatic restarts.
 These local checks do not add independent offline encryption; see Docs/README.md.
 
 This release starts empty. It contains no builder accounts, passwords, cookies or browser profiles.
@@ -85,6 +87,7 @@ Use Check for updates, then Update & restart to install a verified release.
         $wvLicense = Join-Path $env:NUGET_PACKAGES ('microsoft.web.webview2\1.0.4314.35\' + $name)
         if (Test-Path -LiteralPath $wvLicense) { Copy-Item -LiteralPath $wvLicense -Destination (Join-Path $notices ('WebView2-' + $name)) }
     }
+    Copy-Item -LiteralPath (Join-Path $env:NUGET_PACKAGES 'qrcoder\1.8.1\LICENSE.txt') -Destination (Join-Path $notices 'QRCoder-LICENSE.txt')
     $rootFiles = @(Get-ChildItem -LiteralPath $package -File | ForEach-Object Name)
     $rootFolders = @(Get-ChildItem -LiteralPath $package -Directory | ForEach-Object Name)
     if ($rootFiles.Count -ne 2 -or 'RobloxAccountManager.exe' -notin $rootFiles -or 'START-HERE.txt' -notin $rootFiles -or $rootFolders.Count -ne 1 -or $rootFolders[0] -ne 'Docs') {

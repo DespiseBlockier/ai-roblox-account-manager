@@ -4,7 +4,7 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,24">
       <StackPanel DockPanel.Dock="Right" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="Vault security…" Click="VaultSecurity_Click"/><Button Content="Data &amp; backups" Click="Data_Click"/><Button Content="About" Click="About_Click" Margin="0"/></StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button x:Name="SettingsButton" Content="Settings" Click="Settings_Click"/><Button Content="Vault security…" Click="VaultSecurity_Click"/><Button Content="Data &amp; backups" Click="Data_Click"/><Button Content="About" Click="About_Click" Margin="0"/></StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0"><TextBlock x:Name="UpdateStatus" Text="Updates are installed only when you choose." Foreground="{StaticResource Muted}" FontSize="11" MaxWidth="240" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,10,0"/><Button x:Name="UpdateButton" Content="Check for updates" Click="Update_Click" Margin="0" Padding="10,5"/></StackPanel>
       </StackPanel>
       <StackPanel><TextBlock Text="ACCOUNT MANAGER" Foreground="#C3F27D" FontSize="10" FontWeight="SemiBold"/><TextBlock Text="Your Roblox accounts" FontSize="28" FontWeight="SemiBold" Margin="0,4,0,2"/><TextBlock x:Name="ProtectionStatus" Text="Master password protection" Foreground="{StaticResource Muted}"/></StackPanel>
@@ -94,6 +94,6 @@
         </TabItem>
       </TabControl>
     </Grid>
-    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.6.0  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
+    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.7.0  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
   </Grid>
 </Window>

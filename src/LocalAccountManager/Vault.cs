@@ -38,7 +38,7 @@ public sealed partial class Vault : IDisposable
 
     public AppState Unlock(string password, bool convertLegacy = false, string? secondFactor = null)
     {
-        if (password.Length is < 12 or > 1024) throw new UserError("Use a master password of 12–1024 characters.");
+        if (password.Length is < 1 or > 1024) throw new UserError("Enter a master password of 1–1024 characters, or choose No master password.");
         Dispose();
         byte[]? data = Exists ? ReadBounded(FilePath) : null;
         if (data is not null && HasUnprotectedHeader(data)) throw new UserError("This vault has no master password. Reopen the manager to load it.");
@@ -120,7 +120,7 @@ public sealed partial class Vault : IDisposable
     public void ChangeProtection(AppState state, string? newPassword, string currentPassword = "", string secondFactor = "")
     {
         RequireUnlocked();
-        if (newPassword is not null && newPassword.Length is < 12 or > 1024) throw new UserError("Use a master password of 12–1024 characters.");
+        if (newPassword is not null && newPassword.Length is < 1 or > 1024) throw new UserError("Enter a master password of 1–1024 characters, or choose No master password.");
         Validate(state);
         CheckAuthenticationUnchanged(state);
         if (newPassword is null && state.Authentication.Enabled) throw new UserError("Disable authenticator 2FA before removing the master password.");
@@ -193,7 +193,7 @@ public sealed partial class Vault : IDisposable
 
     public static void ExportLayout(string file, AppState state, string password)
     {
-        if (password.Length < 12) throw new UserError("Use a backup password with at least 12 characters.");
+        if (password.Length is < 1 or > 1024) throw new UserError("Enter a backup password of 1–1024 characters.");
         Validate(state);
         byte[] clear = JsonSerializer.SerializeToUtf8Bytes(LayoutOnly(state));
         byte[] salt = RandomNumberGenerator.GetBytes(16);
@@ -239,6 +239,7 @@ public sealed partial class Vault : IDisposable
     public static void Validate(AppState state)
     {
         Authenticator.Validate(state.Authentication);
+        if (state.Settings is null) throw new UserError("The saved app settings are invalid.");
         if (state.Version is not (1 or 2) || state.Accounts is null || state.Favorites is null || state.Recent is null ||
             state.Accounts.Count > 2000 || state.Favorites.Count > 2000 || state.Recent.Count > 30)
             throw new UserError("The data file has an unsupported format or exceeds the account limit.");

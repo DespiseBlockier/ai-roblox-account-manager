@@ -31,8 +31,11 @@ public sealed class UnlockVaultWindow : Window
         var acknowledge = new CheckBox { Name = "AcknowledgeNoPassword", Content = new TextBlock { Text = "I understand that anyone with this folder can read my saved passwords and cookies.", TextWrapping = TextWrapping.Wrap } };
         warning.Children.Add(acknowledge); panel.Children.Add(warning);
         var protectedFields = new StackPanel();
-        protectedFields.Children.Add(new TextBlock { Text = changing ? "New master password · at least 12 characters" : "Master password · at least 12 characters", Margin = new Thickness(0, 14, 0, 6) });
+        protectedFields.Children.Add(new TextBlock { Text = changing ? "New master password · 12+ characters recommended" : "Master password · 12+ characters recommended", Margin = new Thickness(0, 14, 0, 6) });
         var password = new PasswordBox { Name = "MasterPassword", MaxLength = 1024 }; protectedFields.Children.Add(password);
+        var shortWarning = new TextBlock { Name = "ShortPasswordWarning", Text = "Not secure: short passwords are easier to guess. Use at least 12 characters for better protection.", Foreground = System.Windows.Media.Brushes.Salmon, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Visibility = Visibility.Collapsed };
+        password.PasswordChanged += (_, _) => shortWarning.Visibility = password.Password.Length is > 0 and < 12 ? Visibility.Visible : Visibility.Collapsed;
+        protectedFields.Children.Add(shortWarning);
         var confirm = new PasswordBox { Name = "ConfirmPassword", MaxLength = 1024 };
         if (chooseProtection)
         {

@@ -9,7 +9,7 @@ public sealed class VaultSecurityWindow : Window
     public VaultSecurityWindow(Window owner, Vault vault, AppState state)
     {
         Style = (Style)FindResource(typeof(Window)); Owner = owner; Title = "Vault security";
-        Width = 590; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Width = 590; SizeToContent = SizeToContent.Height; MaxHeight = SystemParameters.WorkArea.Height - 40; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(26) };
         panel.Children.Add(new TextBlock { Text = "Vault security", FontSize = 24, FontWeight = FontWeights.SemiBold });
         var protection = new TextBlock { Name = "ProtectionSummary", Margin = new Thickness(0, 16, 0, 12), TextWrapping = TextWrapping.Wrap }; panel.Children.Add(protection);
@@ -42,15 +42,25 @@ public sealed class AuthenticatorSettingsWindow : Window
         Width = 590; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         bool enabled = state.Authentication.Enabled;
         string secret = enabled ? "" : Authenticator.NewSecret();
+        Image? setupQr = null; TextBox? setupKey = null;
         var panel = new StackPanel { Margin = new Thickness(26) };
         panel.Children.Add(new TextBlock { Text = enabled ? "Manage authenticator" : "Set up authenticator", FontSize = 24, FontWeight = FontWeights.SemiBold });
         var inputs = new StackPanel(); panel.Children.Add(inputs);
         if (!enabled)
         {
-            inputs.Children.Add(new TextBlock { Text = "In your authenticator app, add an account using a setup key. Choose time-based (TOTP), six digits, 30 seconds.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 8) });
-            inputs.Children.Add(new TextBlock { Text = "Account name: Roblox Account Manager (local vault)", Margin = new Thickness(0, 0, 0, 8) });
-            inputs.Children.Add(new TextBox { Name = "AuthenticatorSetupKey", Text = secret, IsReadOnly = true, FontFamily = new FontFamily("Consolas"), FontSize = 18 });
-            inputs.Children.Add(new TextBlock { Text = "Keep this key private. Never paste it into an online QR-code generator.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 8, 0, 10) });
+            inputs.Children.Add(new TextBlock { Text = "Scan this QR code with your authenticator app, or enter the setup key manually.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 8) });
+            var setup = new Grid { Margin = new Thickness(0, 4, 0, 8) };
+            setup.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); setup.ColumnDefinitions.Add(new ColumnDefinition());
+            var bitmap = AuthenticatorQr.Create(secret);
+            setupQr = new Image { Name = "AuthenticatorQrCode", Source = bitmap, Width = bitmap.PixelWidth, Height = bitmap.PixelHeight, VerticalAlignment = VerticalAlignment.Top };
+            RenderOptions.SetBitmapScalingMode(setupQr, BitmapScalingMode.NearestNeighbor);
+            setup.Children.Add(new Border { Background = Brushes.White, Child = setupQr, HorizontalAlignment = HorizontalAlignment.Left });
+            var manual = new StackPanel { Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+            manual.Children.Add(new TextBlock { Text = "Manual setup key", Margin = new Thickness(0, 0, 0, 6) });
+            setupKey = new TextBox { Name = "AuthenticatorSetupKey", Text = secret, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Consolas"), FontSize = 13 }; manual.Children.Add(setupKey);
+            manual.Children.Add(new TextBlock { Text = "Roblox Account Manager · Local vault\nTime-based (TOTP), SHA1\n6 digits · 30 seconds", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) });
+            Grid.SetColumn(manual, 1); setup.Children.Add(manual); inputs.Children.Add(setup);
+            inputs.Children.Add(new TextBlock { Text = "Generated offline. Keep the QR code and setup key private.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 0, 0, 10) });
         }
         inputs.Children.Add(new TextBlock { Text = "Current master password", Margin = new Thickness(0, 14, 0, 6) });
         var password = new PasswordBox { Name = "CurrentMasterPassword", MaxLength = 1024 }; inputs.Children.Add(password);
@@ -76,7 +86,7 @@ public sealed class AuthenticatorSettingsWindow : Window
             try
             {
                 var codes = enabled ? vault.RegenerateRecoveryCodes(state, password.Password, code.Password) : vault.EnableAuthenticator(state, password.Password, secret, code.Password);
-                password.Clear(); code.Clear(); secret = ""; ShowRecovery(codes);
+                password.Clear(); code.Clear(); secret = ""; if (setupQr is not null) setupQr.Source = null; setupKey?.Clear(); ShowRecovery(codes);
             }
             catch (Exception ex) { feedback.Text = Security.Friendly(ex); code.Clear(); }
         };
@@ -85,11 +95,13 @@ public sealed class AuthenticatorSettingsWindow : Window
             try { vault.DisableAuthenticator(state, password.Password, code.Password); DialogResult = true; }
             catch (Exception ex) { feedback.Text = Security.Friendly(ex); code.Clear(); }
         };
-        Content = panel;
+        MaxHeight = SystemParameters.WorkArea.Height - 40;
+        Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = panel };
         Loaded += (_, _) => password.Focus();
         Closed += (_, _) =>
         {
             password.Clear(); code.Clear(); secret = "";
+            if (setupQr is not null) setupQr.Source = null; setupKey?.Clear();
             foreach (var text in inputs.Children.OfType<TextBox>()) text.Clear();
             foreach (var text in panel.Children.OfType<TextBox>()) text.Clear();
         };

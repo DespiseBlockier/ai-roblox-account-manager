@@ -65,9 +65,15 @@ public sealed class AppState
 {
     public int Version { get; set; } = 2;
     public VaultAuthentication Authentication { get; set; } = new();
+    public AppSettings Settings { get; set; } = new();
     public List<Account> Accounts { get; set; } = [];
     public List<GameBookmark> Favorites { get; set; } = [];
     public List<GameBookmark> Recent { get; set; } = [];
+}
+
+public sealed class AppSettings
+{
+    public bool AutomaticUpdates { get; set; }
 }
 
 public sealed class VaultAuthentication
