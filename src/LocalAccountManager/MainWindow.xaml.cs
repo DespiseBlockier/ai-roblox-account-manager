@@ -181,7 +181,7 @@ public partial class MainWindow : Window
     private void Add_Click(object sender, RoutedEventArgs e)
     {
         if (BrowserCodeActive) { Status.Text = "Stop the browser-code queue before adding accounts."; return; }
-        if (loginQueue.IsRunning) { ResumeLogin(); return; }
+        if (loginQueue.IsRunning || addition is { IsCompleted: false }) { ResumeLogin(); return; }
         AddButton.ContextMenu.PlacementTarget = AddButton; AddButton.ContextMenu.IsOpen = true;
     }
     private void ResumeLogin()
@@ -192,7 +192,7 @@ public partial class MainWindow : Window
     private void BulkAdd_Click(object sender, RoutedEventArgs e) => AddCredentials();
     private void AddCredentials()
     {
-        if (loginQueue.IsRunning) { ResumeLogin(); return; }
+        if (loginQueue.IsRunning || addition is { IsCompleted: false }) { ResumeLogin(); return; }
         var dialog = new LoginInputWindow(this);
         if (dialog.ShowDialog() == true) StartAddition(dialog.Credentials.Cast<LoginCredential?>().ToList(), allowSkip: true);
     }
@@ -200,7 +200,7 @@ public partial class MainWindow : Window
     private void StartAddition(IReadOnlyList<LoginCredential?> entries, bool allowSkip = false)
     {
         if (BrowserCodeActive) { foreach (var c in entries) c?.Dispose(); Status.Text = "Stop the browser-code queue before signing in."; return; }
-        if (loginQueue.IsRunning || closing) { foreach (var c in entries) c?.Dispose(); ResumeLogin(); return; }
+        if (loginQueue.IsRunning || addition is { IsCompleted: false } || closing) { foreach (var c in entries) c?.Dispose(); ResumeLogin(); return; }
         try { SavePendingNotes(); addition = ProcessAddition(entries, allowSkip); }
         catch (Exception ex) { foreach (var c in entries) c?.Dispose(); Status.Text = Security.Friendly(ex); }
     }
@@ -208,6 +208,9 @@ public partial class MainWindow : Window
     {
         try
         {
+            if (checkingSessions) { AddButton.Content = "Sign-in queue · Waiting"; Status.Text = "Waiting for the current status check to finish before signing in…"; }
+            while (checkingSessions && !closing) await Task.Delay(100, updateCancel.Token);
+            if (closing) return;
             await loginQueue.Run(entries, async (credential, index) =>
             {
                 if (closing) return LoginOutcome.Stopped;
@@ -261,7 +264,7 @@ public partial class MainWindow : Window
             if (!closing) Status.Text = $"Sign-in queue finished: {loginQueue.Completed} connected, {loginQueue.Skipped} skipped, {entries.Count - loginQueue.Completed - loginQueue.Skipped} not completed. Unsaved logins discarded.";
         }
         catch (Exception ex) { if (!closing) { Status.Text = Security.Friendly(ex); ThemedMessageBox.Show(this, Security.Friendly(ex), "Sign-in queue"); } }
-        finally { if (!closing) AddButton.Content = "+  Add account ▾"; addition = null; }
+        finally { foreach (var entry in entries) entry?.Dispose(); if (!closing) AddButton.Content = "+  Add account ▾"; addition = null; }
     }
 
     private void SignIn_Click(object sender, RoutedEventArgs e)
@@ -311,14 +314,14 @@ public partial class MainWindow : Window
 
     private async Task CheckSessions(List<Account> accounts, bool manual)
     {
-        if (checkingSessions || closing || BrowserCodeActive || (!manual && (busy || loginQueue.IsRunning))) return;
+        if (checkingSessions || closing || BrowserCodeActive || loginQueue.IsRunning || addition is { IsCompleted: false } || (!manual && busy)) return;
         checkingSessions = true;
         bool rateLimited = false;
         try
         {
             foreach (var a in accounts)
             {
-                if (closing || !state.Accounts.Contains(a)) break;
+                if (closing || addition is { IsCompleted: false } || !state.Accounts.Contains(a)) break;
                 if (ReferenceEquals(enrollment.Current, a)) continue;
                 a.SessionStatus = "Checking…"; Refresh();
                 try { await browsers.CheckHealth(a); }
