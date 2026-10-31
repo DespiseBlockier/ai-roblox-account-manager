@@ -12,7 +12,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.3/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.3-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.4/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.4-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password** of at least 12 characters (recommended). With password protection, your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Protected vaults require that password each launch. Keep it safe; the app cannot recover it.
 
@@ -34,7 +34,7 @@ The bulk entry box displays the pasted passwords while you edit it and clears wh
 
 **Session validity:** saved cookies are checked on startup, every five minutes, and with **Check status**. Rows distinguish valid sessions, expired cookies, verification requirements, and transient check failures. Hover the session text for its last-check time. Network errors and rate limits do not prove that a cookie has expired. Checks pause while adding accounts and stop a batch if Roblox rate limits it.
 
-**Age group:** each account row shows the age bracket reported by Roblox (for example, 13–15, 16–17, 18–20, or 21+). Startup checks, the five-minute status check, and **Check status** refresh it after confirming the account identity. Hover the age group for the last successful check and any failure. Unknown or unsupported responses show **Unknown**; failed checks keep the last known group. Only the bracket and check time are saved in the private vault. Birth dates and verification documents are not requested or saved. Layout exports exclude this cached information.
+**Age group:** each account row shows the age bracket reported by Roblox (for example, 13–15, 16–17, 18–20, or 21+). Startup checks, the five-minute status check, and **Check status** refresh it after confirming the account identity. Roblox's age-check flag takes priority: accounts that have not completed an age check show **Unchecked**, even if the birthday-based bracket says 21+. A bracket is shown only when Roblox explicitly reports a completed age check. Hover for the age-check state, last successful refresh, and any failure. Missing status or unsupported brackets show **Unknown**; failed requests keep the last confirmed status. Brackets cached by older versions remain hidden until the age-check state is confirmed. Only the bracket and check time are saved in the private vault. Birth dates and verification documents are not requested or saved. Layout exports exclude this cached information.
 
 **Ban monitoring:** the same checks read Roblox's moderation status. Restricted accounts are highlighted red, including when selected. The row shows the ban duration and end time when Roblox supplies dates. **Ban status** shows full dates, Roblox's message, and the last successful check. When the end time passes, the label changes to **Expired · reactivate**; open the account browser to review/reactivate. This does not automatically accept a moderation notice or confirm that Roblox has removed the restriction. Warnings appear separately, and missing dates show an unknown duration rather than guessing a permanent ban. Failed requests retain the last known result and show the failed check in the details. Cached results travel with the private vault; they are not included in layout exports.
 
@@ -102,7 +102,7 @@ Updates started from v1.5.3 or newer automatically reopen the currently unlocked
 
 ## Build from source
 
-Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.3` and `releases/RobloxAccountManager-1.5.3-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
+Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.4` and `releases/RobloxAccountManager-1.5.4-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
 
 The extracted app contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (this guide, licenses, and the browser-code example). Native runtime components use the standard per-user .NET temporary cache. Your account data stays in Data beside the EXE.
 

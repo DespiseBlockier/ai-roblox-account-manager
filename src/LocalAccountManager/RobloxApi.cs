@@ -77,7 +77,7 @@ public sealed class RobloxApi : IDisposable
         return Moderation.Parse(json.RootElement);
     }
 
-    public async Task<string> AgeGroup(string cookie)
+    public async Task<AgeGroupResult> AgeGroup(string cookie)
     {
         using var response = await Send(HttpMethod.Get, "https://apis.roblox.com/user-settings-api/v1/account-insights/age-group", cookie);
         using var json = await Json(response);
