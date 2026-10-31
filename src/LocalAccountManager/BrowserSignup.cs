@@ -129,7 +129,8 @@ public sealed class BrowserSignupClient
             if (initial.IsSuccessStatusCode) result = await Read(initial, cancel);
             else if (initial.StatusCode == HttpStatusCode.Forbidden && Header(initial, "rblx-challenge-id") is string challengeId)
             {
-                if (Header(initial, "rblx-challenge-type") != "captcha") throw new UserError("Roblox requires an unsupported verification step. Signup stopped.");
+                string? challengeType = Header(initial, "rblx-challenge-type");
+                if (!string.Equals(challengeType?.Trim(), "captcha", StringComparison.OrdinalIgnoreCase)) throw UnsupportedVerification(challengeType, call, afterCaptcha: false);
                 string encoded = Header(initial, "rblx-challenge-metadata") ?? throw new UserError("Roblox did not provide CAPTCHA metadata.");
                 JsonElement metadata;
                 try { using var json = JsonDocument.Parse(Convert.FromBase64String(encoded)); metadata = json.RootElement.Clone(); }
@@ -172,7 +173,7 @@ public sealed class BrowserSignupClient
                 using var continued = await Send("/challenge/v1/continue", new { challengeID = challengeId, challengeType = "captcha", challengeMetadata = proofMetadata });
                 if (!continued.IsSuccessStatusCode) throw new UserError("Roblox rejected the CAPTCHA solution. Signup stopped.");
                 var continuation = await Read(continued, cancel);
-                if (continuation.TryGetProperty("challengeType", out var next) && next.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(next.GetString())) throw new UserError("Roblox requested further verification. Signup stopped.");
+                if (continuation.TryGetProperty("challengeType", out var next) && next.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(next.GetString())) throw UnsupportedVerification(next.GetString(), call, afterCaptcha: true);
                 using var completed = await Send("/v2/signup", payload, new() { ["rblx-challenge-id"] = challengeId, ["rblx-challenge-type"] = "captcha", ["rblx-challenge-metadata"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(proofMetadata)) });
                 if (!completed.IsSuccessStatusCode) throw Rejected(completed.StatusCode);
                 result = await Read(completed, cancel);
@@ -202,6 +203,17 @@ public sealed class BrowserSignupClient
         finally { call.ClearSecrets(); }
     }
     private static UserError Rejected(HttpStatusCode code) => new(code == HttpStatusCode.TooManyRequests ? "Roblox rate limited signup. Stop and try later." : "Roblox rejected signup. Check the username, password, birthday, and verification requirements before trying again.");
+    private static UserError UnsupportedVerification(string? type, SignupRequest call, bool afterCaptcha)
+    {
+        string name = type?.Trim() ?? "";
+        // Show only a short type label, never the challenge ID, metadata, or credentials.
+        if (string.IsNullOrWhiteSpace(name)) name = "missing type header";
+        else if (!Regex.IsMatch(name, @"^[a-zA-Z][a-zA-Z0-9_-]{0,63}$") ||
+            new[] { call.ApiKey, call.Password, call.Proxy?.Password, call.Proxy?.Login }.Any(secret => !string.IsNullOrEmpty(secret) && name.Contains(secret, StringComparison.OrdinalIgnoreCase))) name = "unrecognized";
+        return new UserError("Roblox verification: " + name + ". " +
+            (afterCaptcha ? "Roblox requested another verification after the CAPTCHA solution. No extra solver task was sent. " : "This signup helper handles CAPTCHA only. No solver task was sent. ") +
+            "Complete signup through Roblox's regular browser flow. The verification type can be shared for troubleshooting; keep keys, passwords, and cookies private.");
+    }
     private static string Text(JsonElement json, string name, int max) => json.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && value.GetString() is string text && text.Length > 0 && text.Length <= max ? text : throw new UserError("Roblox or the solver returned incomplete signup data.");
     private static string? Header(HttpResponseMessage response, string name)
     {
