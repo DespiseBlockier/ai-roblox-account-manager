@@ -84,6 +84,8 @@ The app checks this repository's latest stable GitHub release at startup. **Chec
 
 The updater verifies an ECDSA P-256 publisher signature using the public key embedded in the app, then checks the signed ZIP size, SHA-256, archive paths, and individual file checksums. It accepts only this project's release files and approved GitHub download hosts. An invalid signature, damaged download, or unexpected file stops installation. There are no GitHub login tokens or Roblox credentials in update requests.
 
+The installer waits for the old process to exit and retries briefly if Windows retains an executable file lock. If the older v1.5.3 updater cannot replace its EXE, close the manager and manually copy the new ZIP's EXE, text files, and Docs into your used folder, keeping Data.
+
 Only application files and Docs are replaced. Data is preserved, and interrupted installation attempts roll back replaced app files where possible. Recovery copies are kept under `.updates`; keep that folder if an update reports a recovery failure. Updating requires a writable ordinary application folder, without symbolic links or junctions. The app may briefly close during installation and restart on the same vault. Offline or rate-limited checks leave the app usable.
 
 Versions before 1.4.0 need one manual download to get this updater. The app is unofficial and is not an independently audited security product.

@@ -91,13 +91,13 @@ public static class UpdateInstaller
                 try
                 {
                     File.Copy(source, temp, false);
-                    if (Digest(temp) != pair.Value) throw new UserError("A staged update file changed. Installation was stopped.");
-                    File.Move(temp, target, true); changed.Add((pair.Key, existed));
+                    ReplaceVerified(temp, target, pair.Value, pair.Key == ExeName);
+                    changed.Add((pair.Key, existed));
                 }
                 finally { if (File.Exists(temp)) File.Delete(temp); }
             }
         }
-        catch
+        catch (Exception error)
         {
             bool restored = true;
             foreach (var item in changed.AsEnumerable().Reverse())
@@ -110,7 +110,22 @@ public static class UpdateInstaller
                 catch { restored = false; }
             }
             if (!restored) throw new UserError("The update failed and rollback was incomplete. Keep the backup folder under .updates and restore the previous app files. Your Data folder was not changed.");
-            throw new UserError("The update failed. Previous app files were restored; your Data folder was not changed.");
+            string detail = error is IOException or UnauthorizedAccessException ? $" (Windows file error {error.HResult & 0xffff})" : "";
+            throw new UserError("The update failed" + detail + ". Previous app files were restored; your Data folder was not changed.");
+        }
+    }
+    private static void ReplaceVerified(string temp, string target, string hash, bool executable)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            if (Digest(temp) != hash) throw new UserError("A staged update file changed. Installation was stopped.");
+            try { File.Move(temp, target, true); return; }
+            catch (Exception error) when (executable && attempt < 24 &&
+                (error is IOException or UnauthorizedAccessException) && ((error.HResult & 0xffff) is 5 or 32 or 33))
+            {
+                // Windows can retain an image/sharing lock briefly after the original process exits.
+                Thread.Sleep(200);
+            }
         }
     }
     public static async Task<Process> StartHelperAsync(string root, string work, string dataRoot)
@@ -164,7 +179,9 @@ public static class UpdateInstaller
             File.WriteAllText(Path.Combine(work, "ready"), "ready");
             if (process is not null)
             {
-                using (process) { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60)); await process.WaitForExitAsync(timeout.Token); }
+                // Complete and release the wait handle on a worker before replacing the original image.
+                using (process)
+                    if (!await Task.Run(() => process.WaitForExit(60_000))) throw new UserError("The original application did not close in time. No files were installed.");
             }
             parentExited = true;
             using (var installLock = new FileStream(Path.Combine(parent, "install.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
