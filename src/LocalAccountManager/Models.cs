@@ -64,9 +64,20 @@ public sealed class GameBookmark
 public sealed class AppState
 {
     public int Version { get; set; } = 2;
+    public VaultAuthentication Authentication { get; set; } = new();
     public List<Account> Accounts { get; set; } = [];
     public List<GameBookmark> Favorites { get; set; } = [];
     public List<GameBookmark> Recent { get; set; } = [];
+}
+
+public sealed class VaultAuthentication
+{
+    public bool Enabled { get; set; }
+    public Guid Id { get; set; }
+    public string Secret { get; set; } = "";
+    public List<string> RecoveryHashes { get; set; } = [];
+    public long LastAcceptedStep { get; set; } = -1;
+    public override string ToString() => "VaultAuthentication [redacted]";
 }
 
 public sealed record RobloxIdentity(long Id, string Name, string DisplayName);
@@ -74,6 +85,7 @@ public sealed record GameServer(string Id, int Playing, int MaxPlayers, int? Pin
 public sealed record ServerPage(List<GameServer> Servers, string? NextCursor);
 
 public class UserError(string message) : Exception(message);
+public sealed class SecondFactorRequiredError() : UserError("Enter your authenticator code or an unused recovery code.");
 public sealed class RobloxApiError(int statusCode, string message) : UserError(message)
 {
     public int StatusCode { get; } = statusCode;

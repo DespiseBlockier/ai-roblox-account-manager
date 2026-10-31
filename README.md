@@ -12,11 +12,15 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.4/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.4-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.6.0/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.6.0-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password** of at least 12 characters (recommended). With password protection, your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Protected vaults require that password each launch. Keep it safe; the app cannot recover it.
 
 You can instead select **No master password (Not recommended)** and acknowledge its warning. This stores saved passwords, cookies, and account data in readable form and opens the app without asking for a password. Anyone who obtains the folder can access those accounts. This option is off by default. **Vault security…** changes the setting later; removing protection requires the current master password. Enabling protection encrypts both the current vault and its known previous-save file. This cannot securely erase plaintext that already existed on the drive or in other copies.
+
+**Authenticator-app 2FA:** open **Vault security… → Set up authenticator…** after enabling a master password. Add the displayed setup key to an authenticator app using time-based (TOTP), six-digit, 30-second codes, then confirm a code. Save the eight one-use recovery codes somewhere separate from the vault. Normal launches require the master password plus an authenticator or unused recovery code, including launches with a command-line password. Codes from an accepted time step cannot be reused; wait for a fresh code when changing security settings. Vault security also lets you generate replacement recovery codes or disable 2FA, requiring the current master password and a valid code. New recovery codes invalidate every previous recovery code. Losing both the authenticator and recovery codes means this app cannot unlock the vault.
+
+This is a **local app-unlock check**, not an independent layer of offline encryption. The authenticator secret is stored inside the master-password-encrypted vault. Someone who has the vault file and knows the master password can bypass this check using other software. It does not configure Roblox account 2FA. Authenticator-enabled vaults use a newer authenticated header that older manager versions cannot open. The setup key, recovery hashes, and consumed-code state stay in the private vault and are excluded from layout exports. Updates use the existing one-use session handoff only after both unlock steps have succeeded; later normal launches ask again.
 
 To use a USB or another PC, close the manager, copy the **whole used application folder including Data**, and open it on the other PC. Protected vaults use the same master password; no-password vaults open automatically. Browser caches stay under Data in separate per-PC/per-Windows-user directories. The portable vault restores saved cookies into the matching account's new browser profile; Roblox may still require a fresh login or verification on another PC. All account entries and saved passwords remain in the vault.
 
@@ -34,7 +38,7 @@ The bulk entry box displays the pasted passwords while you edit it and clears wh
 
 **Session validity:** saved cookies are checked on startup, every five minutes, and with **Check status**. Rows distinguish valid sessions, expired cookies, verification requirements, and transient check failures. Hover the session text for its last-check time. Network errors and rate limits do not prove that a cookie has expired. Checks pause while adding accounts and stop a batch if Roblox rate limits it.
 
-**Age group:** each account row shows the age bracket reported by Roblox (for example, 13–15, 16–17, 18–20, or 21+). Startup checks, the five-minute status check, and **Check status** refresh it after confirming the account identity. Roblox's age-check flag takes priority: accounts that have not completed an age check show **Unchecked**, even if the birthday-based bracket says 21+. A bracket is shown only when Roblox explicitly reports a completed age check. Hover for the age-check state, last successful refresh, and any failure. Missing status or unsupported brackets show **Unknown**; failed requests keep the last confirmed status. Brackets cached by older versions remain hidden until the age-check state is confirmed. Only the bracket and check time are saved in the private vault. Birth dates and verification documents are not requested or saved. Layout exports exclude this cached information.
+**Age group:** the Status column replaces the old “Never launched” label with the age bracket reported by Roblox (for example, 13–15, 16–17, 18–20, or 21+). Startup checks, the five-minute status check, and **Check status** refresh it after confirming the account identity. Roblox's age-check flag takes priority: accounts that have not completed an age check show **Unchecked**, even if the birthday-based bracket says 21+. A bracket is shown only when Roblox explicitly reports a completed age check. Hover for the age-check state, last successful refresh, and any failure. Missing status or unsupported brackets show **Unknown**; failed requests keep the last confirmed status. Brackets cached by older versions remain hidden until the age-check state is confirmed. Only the bracket and check time are saved in the private vault. Birth dates and verification documents are not requested or saved. Layout exports exclude this cached information.
 
 **Ban monitoring:** the same checks read Roblox's moderation status. Restricted accounts are highlighted red, including when selected. The row shows the ban duration and end time when Roblox supplies dates. **Ban status** shows full dates, Roblox's message, and the last successful check. When the end time passes, the label changes to **Expired · reactivate**; open the account browser to review/reactivate. This does not automatically accept a moderation notice or confirm that Roblox has removed the restriction. Warnings appear separately, and missing dates show an unknown duration rather than guessing a permanent ban. Failed requests retain the last known result and show the failed check in the details. Cached results travel with the private vault; they are not included in layout exports.
 
@@ -48,6 +52,7 @@ The bulk entry box displays the pasted passwords while you edit it and clears wh
 
 ## Features
 
+- Dark custom title bars with normal move, resize, minimize, maximize, and close controls; matching scrollbars, dropdowns, menus, and dialogs. Windows-owned file pickers follow the Windows theme.
 - Multiple account entries, aliases, notes, editable groups, search, starred accounts, and manual ordering.
 - Separate persistent browser sessions, verified against the selected Roblox user ID before every managed launch.
 - Place IDs, game URLs, optional public-server Job IDs, and per-account saved game targets.
@@ -55,6 +60,7 @@ The bulk entry box displays the pasted passwords while you edit it and clears wh
 - Game favorites and the last 30 requested game targets.
 - Multi-selection for session checks, launch requests, group-independent edits to favorites, saved targets, local sign out, and removal. Select rows using Ctrl/Shift.
 - Optional portable AES-256-GCM master-password encryption for account details, explicitly provided passwords, and Roblox session cookies. No-password mode is clearly marked Not recommended. A flushed temporary file replaces the vault while retaining the previous save under its active protection mode.
+- Optional authenticator-app unlock checks and one-use recovery codes in Vault security (requires a master password; see limitations above).
 - Password-encrypted layout export/import using PBKDF2-SHA256 and AES-256-GCM. Imported accounts get fresh profile IDs and must sign in again. These backups **do not contain login sessions**.
 - Optional, off-by-default legacy multi-instance mutex. Enable with Roblox closed. Modern Roblox clients may ignore this method or limit simultaneous clients. It does not modify Roblox files, inject code, close other processes, or bypass client protections.
 
@@ -68,7 +74,7 @@ The interface follows the same workflow with a new dark layout. This is not an e
 
 All new manager data is under **Data beside the executable**:
 
-- `accounts.vault`: account details, saved passwords, session cookies, cached moderation and age-group results, groups, favorites, recent targets, and saved links. Encrypted with a master password by default; readable when No master password is enabled.
+- `accounts.vault`: account details, saved passwords, session cookies, cached moderation and age-group results, groups, favorites, recent targets, saved links, and optional authenticator settings. Encrypted with a master password by default; readable when No master password is enabled.
 - `accounts.vault.previous`: the previous save, using the protection mode that was active when it was saved. Removed account details or credentials can remain in this previous copy until another successful save.
 - `BrowserData/<device key>`: WebView2's browser storage for each PC/Windows user, including browser-protected cookies. Treat the entire Data folder as private.
 
@@ -104,7 +110,7 @@ Updates started from v1.5.3 or newer automatically reopen the currently unlocked
 
 ## Build from source
 
-Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.4` and `releases/RobloxAccountManager-1.5.4-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
+Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.6.0` and `releases/RobloxAccountManager-1.6.0-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
 
 The extracted app contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (this guide, licenses, and the browser-code example). Native runtime components use the standard per-user .NET temporary cache. Your account data stays in Data beside the EXE.
 

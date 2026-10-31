@@ -67,6 +67,7 @@ public sealed partial class Vault
                 try { state = Deserialize(plaintext); }
                 finally { CryptographicOperations.ZeroMemory(plaintext); }
                 Dispose(); masterKey = key; vaultSalt = clear.AsSpan(48, 16).ToArray();
+                RememberAuthentication(state);
                 return state;
             }
             catch { CryptographicOperations.ZeroMemory(key); throw; }

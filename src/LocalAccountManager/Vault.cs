@@ -10,6 +10,7 @@ public sealed partial class Vault : IDisposable
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("LocalAccountManager.Metadata.v1");
     private static readonly byte[] BackupMagic = Encoding.ASCII.GetBytes("RAMLAY01");
     private static readonly byte[] PortableMagic = Encoding.ASCII.GetBytes("RAMPV003");
+    private static readonly byte[] AuthenticatedMagic = Encoding.ASCII.GetBytes("RAM2F005");
     private static readonly byte[] UnprotectedMagic = Encoding.ASCII.GetBytes("RAMNP004");
     private byte[]? masterKey;
     private byte[]? vaultSalt;
@@ -24,6 +25,7 @@ public sealed partial class Vault : IDisposable
     public bool IsPortable => Exists && (HasPortableHeader(ReadBounded(FilePath)) || IsPasswordless);
     public bool IsPasswordless => Exists && HasUnprotectedHeader(ReadBounded(FilePath));
     public bool UsesMasterPassword => !unprotected;
+    public bool RequiresSecondFactor => Exists && HasAuthenticationHeader(ReadBounded(FilePath));
     public static string DefaultRoot(string applicationFolder) => Path.GetFullPath(Path.Combine(applicationFolder, "Data"));
     private static readonly Lazy<string> DeviceKey = new(() =>
     {
@@ -34,7 +36,7 @@ public sealed partial class Vault : IDisposable
 
     public Vault(string root) => Root = Path.GetFullPath(root);
 
-    public AppState Unlock(string password, bool convertLegacy = false)
+    public AppState Unlock(string password, bool convertLegacy = false, string? secondFactor = null)
     {
         if (password.Length is < 12 or > 1024) throw new UserError("Use a master password of 12–1024 characters.");
         Dispose();
@@ -53,10 +55,17 @@ public sealed partial class Vault : IDisposable
                 try { state = Deserialize(clear); } finally { CryptographicOperations.ZeroMemory(clear); }
             }
             else state = data is null ? new AppState() : ReadLegacyWindows(FilePath);
-            masterKey = key; vaultSalt = salt;
+            if (state.Authentication.Enabled)
+            {
+                pendingUnlock = new PendingUnlock(key, salt, state, SHA256.HashData(data!), DateTimeOffset.UtcNow);
+                key = null!;
+                if (string.IsNullOrWhiteSpace(secondFactor)) throw new SecondFactorRequiredError();
+                return CompleteSecondFactor(secondFactor);
+            }
+            masterKey = key; vaultSalt = salt; RememberAuthentication(state);
             return state;
         }
-        catch { CryptographicOperations.ZeroMemory(key); throw; }
+        catch { if (key is not null) CryptographicOperations.ZeroMemory(key); throw; }
     }
 
     public AppState Load()
@@ -80,11 +89,12 @@ public sealed partial class Vault : IDisposable
         RequireUnlocked();
         if (state.Version != 2) throw new UserError("The account database must be migrated before saving.");
         Validate(state);
+        CheckAuthenticationUnchanged(state);
         byte[] clear = JsonSerializer.SerializeToUtf8Bytes(state);
         try
         {
             if (clear.Length > MaxBytes) throw new UserError("The account database is too large.");
-            byte[] stored = Encode(clear, masterKey, vaultSalt);
+            byte[] stored = Encode(clear, masterKey, vaultSalt, state.Authentication.Enabled);
             try { WriteAtomic(FilePath, stored, FilePath + ".previous"); }
             finally { CryptographicOperations.ZeroMemory(stored); }
         }
@@ -100,17 +110,20 @@ public sealed partial class Vault : IDisposable
             if (data is not null && HasPortableHeader(data)) throw new UserError("Enter the current master password before removing protection.");
             AppState state = data is null ? new AppState() : HasUnprotectedHeader(data) ? Deserialize(data[8..]) :
                 convertLegacy ? ReadLegacyWindows(FilePath) : throw new UserError("Choose explicit conversion for this older vault.");
-            unprotected = true;
+            if (state.Authentication.Enabled) throw new UserError("Authenticator protection requires an encrypted vault.");
+            unprotected = true; RememberAuthentication(state);
             return state;
         }
         finally { if (data is not null) CryptographicOperations.ZeroMemory(data); }
     }
 
-    public void ChangeProtection(AppState state, string? newPassword, string currentPassword = "")
+    public void ChangeProtection(AppState state, string? newPassword, string currentPassword = "", string secondFactor = "")
     {
         RequireUnlocked();
         if (newPassword is not null && newPassword.Length is < 12 or > 1024) throw new UserError("Use a master password of 12–1024 characters.");
         Validate(state);
+        CheckAuthenticationUnchanged(state);
+        if (newPassword is null && state.Authentication.Enabled) throw new UserError("Disable authenticator 2FA before removing the master password.");
         if (!unprotected)
         {
             byte[] data = ReadBounded(FilePath);
@@ -119,13 +132,15 @@ public sealed partial class Vault : IDisposable
             try { byte[] clearCheck = OpenPortable(data, checkKey); CryptographicOperations.ZeroMemory(clearCheck); }
             finally { CryptographicOperations.ZeroMemory(checkKey); }
         }
+        var previousAuthentication = state.Authentication;
+        if (previousAuthentication.Enabled) state.Authentication = AcceptFactor(previousAuthentication, secondFactor);
         byte[]? salt = newPassword is null ? null : RandomNumberGenerator.GetBytes(16);
         byte[]? nextKey = newPassword is null ? null : Rfc2898DeriveBytes.Pbkdf2(newPassword, salt!, Iterations, HashAlgorithmName.SHA256, 32);
         byte[] clear = JsonSerializer.SerializeToUtf8Bytes(state);
         try
         {
             if (clear.Length > MaxBytes) throw new UserError("The account database is too large.");
-            byte[] stored = Encode(clear, nextKey, salt);
+            byte[] stored = Encode(clear, nextKey, salt, state.Authentication.Enabled);
             try
             {
                 // Replace the known previous save first, so enabling protection never leaves that copy in plaintext.
@@ -135,17 +150,20 @@ public sealed partial class Vault : IDisposable
             }
             finally { CryptographicOperations.ZeroMemory(stored); }
             Dispose(); masterKey = nextKey; nextKey = null; vaultSalt = salt; unprotected = newPassword is null;
+            RememberAuthentication(state);
         }
+        catch { state.Authentication = previousAuthentication; throw; }
         finally { CryptographicOperations.ZeroMemory(clear); if (nextKey is not null) CryptographicOperations.ZeroMemory(nextKey); }
     }
 
-    private static byte[] Encode(byte[] clear, byte[]? key, byte[]? salt)
+    private static byte[] Encode(byte[] clear, byte[]? key, byte[]? salt, bool authenticated = false)
     {
         if (key is null) return [.. UnprotectedMagic, .. clear];
         byte[] nonce = RandomNumberGenerator.GetBytes(12), tag = new byte[16], encrypted = new byte[clear.Length];
         using var aes = new AesGcm(key, 16);
-        aes.Encrypt(nonce, clear, encrypted, tag, PortableMagic);
-        return [.. PortableMagic, .. salt!, .. nonce, .. tag, .. encrypted];
+        byte[] magic = authenticated ? AuthenticatedMagic : PortableMagic;
+        aes.Encrypt(nonce, clear, encrypted, tag, magic);
+        return [.. magic, .. salt!, .. nonce, .. tag, .. encrypted];
     }
 
     public static AppState ReadLegacyWindows(string file)
@@ -154,17 +172,24 @@ public sealed partial class Vault : IDisposable
         try { return Deserialize(clear); } finally { CryptographicOperations.ZeroMemory(clear); }
     }
 
-    private static bool HasPortableHeader(byte[] data) => data.Length >= 53 && data.AsSpan(0, 8).SequenceEqual(PortableMagic);
+    private static bool HasAuthenticationHeader(byte[] data) => data.Length >= 53 && data.AsSpan(0, 8).SequenceEqual(AuthenticatedMagic);
+    private static bool HasPortableHeader(byte[] data) => data.Length >= 53 && (data.AsSpan(0, 8).SequenceEqual(PortableMagic) || HasAuthenticationHeader(data));
     private static bool HasUnprotectedHeader(byte[] data) => data.Length > 8 && data.AsSpan(0, 8).SequenceEqual(UnprotectedMagic);
     private static byte[] OpenPortable(byte[] data, byte[] key)
     {
         if (!HasPortableHeader(data)) throw new UserError("The portable vault header is invalid. The file has been preserved.");
         byte[] clear = new byte[data.Length - 52];
-        try { using var aes = new AesGcm(key, 16); aes.Decrypt(data.AsSpan(24, 12), data.AsSpan(52), data.AsSpan(36, 16), clear, PortableMagic); return clear; }
+        try
+        {
+            using var aes = new AesGcm(key, 16); aes.Decrypt(data.AsSpan(24, 12), data.AsSpan(52), data.AsSpan(36, 16), clear, data.AsSpan(0, 8));
+            var state = Deserialize(clear);
+            if (state.Authentication.Enabled != HasAuthenticationHeader(data)) throw new UserError("The vault authentication header does not match its settings.");
+            return clear;
+        }
         catch { CryptographicOperations.ZeroMemory(clear); throw; }
     }
     private void RequireUnlocked() { if (!IsUnlocked) throw new UserError("Open the portable vault first."); }
-    public void Dispose() { if (masterKey is not null) CryptographicOperations.ZeroMemory(masterKey); masterKey = null; vaultSalt = null; unprotected = false; }
+    public void Dispose() { if (masterKey is not null) CryptographicOperations.ZeroMemory(masterKey); masterKey = null; vaultSalt = null; unprotected = false; ClearPendingUnlock(); activeAuthentication = null; }
 
     public static void ExportLayout(string file, AppState state, string password)
     {
@@ -213,6 +238,7 @@ public sealed partial class Vault : IDisposable
 
     public static void Validate(AppState state)
     {
+        Authenticator.Validate(state.Authentication);
         if (state.Version is not (1 or 2) || state.Accounts is null || state.Favorites is null || state.Recent is null ||
             state.Accounts.Count > 2000 || state.Favorites.Count > 2000 || state.Recent.Count > 30)
             throw new UserError("The data file has an unsupported format or exceeds the account limit.");

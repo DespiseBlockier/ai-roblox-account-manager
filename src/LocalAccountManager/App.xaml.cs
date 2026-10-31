@@ -21,13 +21,13 @@ public partial class App : Application
         try
         {
             using var options = LaunchOptions.Parse(e.Args);
-            if (options.Help) { MessageBox.Show(LaunchOptions.Usage, "Launch arguments", MessageBoxButton.OK, MessageBoxImage.Information); Shutdown(); return; }
+            if (options.Help) { ThemedMessageBox.Show(LaunchOptions.Usage, "Launch arguments", MessageBoxButton.OK, MessageBoxImage.Information); Shutdown(); return; }
             UpdateInstaller.CleanupCompleted(AppContext.BaseDirectory);
             Vault.CleanupExpiredUpdateTokens(AppContext.BaseDirectory);
             string root = options.DataDirectory ?? Vault.DefaultRoot(AppContext.BaseDirectory);
             string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(root).ToUpperInvariant())));
             instance = new Mutex(true, "Local\\LocalRobloxAccountManager-" + key, out bool created);
-            if (!created) { MessageBox.Show("This account manager is already open for this data folder."); Shutdown(); return; }
+            if (!created) { ThemedMessageBox.Show("This account manager is already open for this data folder."); Shutdown(); return; }
             vault = new Vault(root);
             string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalRobloxAccountManager", "accounts.vault");
             AppState? state = options.TryUnlock(vault, AppContext.BaseDirectory, out string feedback);
@@ -45,7 +45,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show(Security.Friendly(ex) + (vault is null ? "" : "\n\nData folder: " + vault.Root) + "\nThe app has stopped to preserve your data.", "Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ThemedMessageBox.Show(Security.Friendly(ex) + (vault is null ? "" : "\n\nData folder: " + vault.Root) + "\nThe app has stopped to preserve your data.", "Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }

@@ -56,6 +56,8 @@ Anyone with an unprotected Data folder can access the saved accounts.
 All account data is created in Data beside the EXE. Copy the ENTIRE folder to your USB.
 Protected vaults use the same master password on another Windows PC; Roblox may require a fresh login.
 Keep your master password safe. The app cannot recover it.
+Optional authenticator-app unlock checks are in Vault security. Save recovery codes separately.
+These local checks do not add independent offline encryption; see Docs/README.md.
 
 This release starts empty. It contains no builder accounts, passwords, cookies or browser profiles.
 Share the original ZIP, not your used folder containing Data.

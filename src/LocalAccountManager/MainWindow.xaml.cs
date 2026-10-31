@@ -70,13 +70,14 @@ public partial class MainWindow : Window
 
     private void UpdateProtectionLabel()
     {
-        ProtectionStatus.Text = vault.UsesMasterPassword ? "●  Master password protection · Portable" : "⚠  No master password · Not recommended";
+        ProtectionStatus.Text = vault.UsesMasterPassword ? "●  Master password" + (state.Authentication.Enabled ? " + Authenticator 2FA" : " protection") + " · Portable" : "⚠  No master password · Not recommended";
         ProtectionStatus.Foreground = vault.UsesMasterPassword ? (System.Windows.Media.Brush)FindResource("Muted") : System.Windows.Media.Brushes.Salmon;
     }
     private async void VaultSecurity_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
-        var dialog = new UnlockVaultWindow(vault, existingState: state) { Owner = this };
-        if (dialog.ShowDialog() == true) { UpdateProtectionLabel(); Status.Text = vault.UsesMasterPassword ? "Master password protection enabled." : "No master password (Not recommended). Anyone with the folder can read saved credentials."; }
+        SavePendingNotes();
+        new VaultSecurityWindow(this, vault, state).ShowDialog();
+        UpdateProtectionLabel();
         return Task.CompletedTask;
     });
     private async Task CheckUpdatesAsync()
@@ -142,7 +143,7 @@ public partial class MainWindow : Window
         if (BrowserCodeActive) { Status.Text = "Stop the browser-code queue before changing accounts or launching another action."; return; }
         busy = true; AddButton.IsEnabled = false;
         try { SavePendingNotes(); await work(); }
-        catch (Exception ex) { Status.Text = Security.Friendly(ex); MessageBox.Show(this, Security.Friendly(ex), "Account Manager", MessageBoxButton.OK, MessageBoxImage.Information); }
+        catch (Exception ex) { Status.Text = Security.Friendly(ex); ThemedMessageBox.Show(this, Security.Friendly(ex), "Account Manager", MessageBoxButton.OK, MessageBoxImage.Information); }
         finally { busy = false; AddButton.IsEnabled = true; }
     }
 
@@ -298,7 +299,7 @@ public partial class MainWindow : Window
             });
             if (!closing) Status.Text = $"Sign-in queue finished: {loginQueue.Completed} connected, {loginQueue.Skipped} skipped, {entries.Count - loginQueue.Completed - loginQueue.Skipped} not completed. Unsaved logins discarded.";
         }
-        catch (Exception ex) { if (!closing) { Status.Text = Security.Friendly(ex); MessageBox.Show(this, Security.Friendly(ex), "Sign-in queue"); } }
+        catch (Exception ex) { if (!closing) { Status.Text = Security.Friendly(ex); ThemedMessageBox.Show(this, Security.Friendly(ex), "Sign-in queue"); } }
         finally { if (!closing) AddButton.Content = "+  Add account ▾"; addition = null; }
     }
 
@@ -446,7 +447,7 @@ public partial class MainWindow : Window
     private async void SignOut_Click(object sender, RoutedEventArgs e) => await Run(async () =>
     {
         var accounts = SelectedMany();
-        if (MessageBox.Show(this, $"Clear local browser sessions for {accounts.Count} selected account(s)? You will need to sign in again. This does not revoke sessions on other devices.", "Sign out locally", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (ThemedMessageBox.Show(this, $"Clear local browser sessions for {accounts.Count} selected account(s)? You will need to sign in again. This does not revoke sessions on other devices.", "Sign out locally", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         foreach (var a in accounts) await browsers.Clear(a);
         SaveRefresh("Selected local sessions cleared. Saved passwords were kept for signing in again.");
     });
@@ -454,7 +455,7 @@ public partial class MainWindow : Window
     {
         var accounts = SelectedMany();
         if (accounts.Any(a => ReferenceEquals(a, enrollment.Current))) throw new UserError("Close the active sign-in browser before removing this account.");
-        if (MessageBox.Show(this, $"Remove {accounts.Count} selected account(s) and clear their local browser sessions?", "Remove accounts", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (ThemedMessageBox.Show(this, $"Remove {accounts.Count} selected account(s) and clear their local browser sessions?", "Remove accounts", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         foreach (var a in accounts) { await browsers.Clear(a); state.Accounts.Remove(a); vault.Save(state); }
         Refresh(); Status.Text = "Selected accounts removed.";
     });
@@ -495,8 +496,8 @@ public partial class MainWindow : Window
         catch (Exception ex) { MultiInstance.IsChecked = false; Status.Text = Security.Friendly(ex); }
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
-    private void About_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.5.4\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+    private void About_Click(object sender, RoutedEventArgs e) => ThemedMessageBox.Show(this,
+        "Roblox Account Manager · Portable 1.6.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

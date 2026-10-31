@@ -17,6 +17,7 @@ public sealed class LaunchOptions : IDisposable
 
         Quote passwords and paths containing spaces.
         The password unlocks an existing master-password vault.
+        Authenticator-enabled vaults still ask for an authenticator or recovery code.
         Incorrect passwords return to the normal unlock screen.
         First-run setup and legacy conversion still use the setup screen.
 
@@ -76,6 +77,11 @@ public sealed class LaunchOptions : IDisposable
             if (UnlockToken is not null) return vault.UnlockUpdateToken(appRoot, UnlockToken);
             if (Password is null || !vault.Exists || vault.IsPasswordless || !vault.IsPortable) return null;
             return vault.Unlock(Password);
+        }
+        catch (SecondFactorRequiredError)
+        {
+            feedback = "Master password accepted. Enter your authenticator code or an unused recovery code.";
+            return null;
         }
         catch (Exception error) when (error is UserError or CryptographicException or IOException or UnauthorizedAccessException)
         {
