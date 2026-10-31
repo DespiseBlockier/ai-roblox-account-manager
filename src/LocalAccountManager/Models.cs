@@ -17,6 +17,13 @@ public sealed class Account
     public string SavedJob { get; set; } = "";
     public string SavedPassword { get; set; } = "";
     public string SessionCookie { get; set; } = "";
+    public string AgeGroup { get; set; } = "Unknown";
+    public DateTimeOffset? AgeGroupCheckedAt { get; set; }
+    [JsonIgnore] public string AgeGroupCheckStatus { get; set; } = "Not checked this session";
+    [JsonIgnore] public string AgeGroupLabel => "Age group: " + AgeGroup;
+    [JsonIgnore] public string AgeGroupDetails => AgeGroupLabel + "\n" + AgeGroupCheckStatus +
+        (AgeGroupCheckedAt is { } time ? "\nLast successful check: " + time.ToLocalTime().ToString("f") : "") +
+        "\nReported by Roblox. Check status refreshes it. Failed checks keep the last known group.";
     public ModerationRestriction? Restriction { get; set; }
     public DateTimeOffset? ModerationCheckedAt { get; set; }
     [JsonIgnore] public string ModerationCheckStatus { get; set; } = "Not checked this session";

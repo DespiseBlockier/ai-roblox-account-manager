@@ -222,7 +222,8 @@ public sealed class Vault : IDisposable
             if (a is null || a.Id == Guid.Empty || !ids.Add(a.Id) || a.UserId < 0 ||
                 !Text(a.Username, 100) || !Text(a.DisplayName, 100) || !Text(a.Alias, 80) || !Text(a.Group, 80) ||
                 !Text(a.Notes, 4000) || !Text(a.SavedTarget, 4096) || !Text(a.SavedJob, 40) ||
-                !Text(a.SavedPassword, 1024) || !Text(a.SessionCookie, 20000) || a.SessionCookie.Any(c => char.IsControl(c) || c == ';')) throw new UserError("The account data is invalid.");
+                !Text(a.SavedPassword, 1024) || !Text(a.SessionCookie, 20000) || a.SessionCookie.Any(c => char.IsControl(c) || c == ';') ||
+                !AgeGroups.IsValid(a.AgeGroup)) throw new UserError("The account data is invalid.");
             if (a.Restriction is { } restriction && (!Text(restriction.Reason, 4000) ||
                 (restriction.Began is { } start && restriction.Ends is { } end && end < start)))
                 throw new UserError("The saved moderation data is invalid.");

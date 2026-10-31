@@ -357,7 +357,7 @@ public partial class MainWindow : Window
                 await Task.Delay(650);
             }
             if (!closing && accounts.Count > 0) { vault.Save(state); Refresh(); }
-            if (manual && !closing) Status.Text = rateLimited ? "Roblox rate limited status checks. Remaining accounts were left unchanged; retry later." : "Session and ban checks finished. See the Ban status tab for details.";
+            if (manual && !closing) Status.Text = rateLimited ? "Roblox rate limited status checks. Remaining accounts were left unchanged; retry later." : "Session, ban, and age-group checks finished. See the Ban status tab for details.";
         }
         catch (Exception ex) { if (!closing) Status.Text = "Status results could not be saved. " + Security.Friendly(ex); }
         finally { checkingSessions = false; }
@@ -487,7 +487,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.5.2\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.5.3\n\n• Single and bulk sign-in queues\n• Optional master-password protection for portable accounts and cookies\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates installed only by your request\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

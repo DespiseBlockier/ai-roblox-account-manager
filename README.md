@@ -12,7 +12,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.2/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.2-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.5.3/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.5.3-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password** of at least 12 characters (recommended). With password protection, your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Protected vaults require that password each launch. Keep it safe; the app cannot recover it.
 
@@ -33,6 +33,8 @@ The release targets **Windows x64** and includes the .NET runtime. [Microsoft Ed
 The bulk entry box displays the pasted passwords while you edit it and clears when the queue starts or the dialog closes. It has no undo history. No import list is written to disk.
 
 **Session validity:** saved cookies are checked on startup, every five minutes, and with **Check status**. Rows distinguish valid sessions, expired cookies, verification requirements, and transient check failures. Hover the session text for its last-check time. Network errors and rate limits do not prove that a cookie has expired. Checks pause while adding accounts and stop a batch if Roblox rate limits it.
+
+**Age group:** each account row shows the age bracket reported by Roblox (for example, 13–15, 16–17, 18–20, or 21+). Startup checks, the five-minute status check, and **Check status** refresh it after confirming the account identity. Hover the age group for the last successful check and any failure. Unknown or unsupported responses show **Unknown**; failed checks keep the last known group. Only the bracket and check time are saved in the private vault. Birth dates and verification documents are not requested or saved. Layout exports exclude this cached information.
 
 **Ban monitoring:** the same checks read Roblox's moderation status. Restricted accounts are highlighted red, including when selected. The row shows the ban duration and end time when Roblox supplies dates. **Ban status** shows full dates, Roblox's message, and the last successful check. When the end time passes, the label changes to **Expired · reactivate**; open the account browser to review/reactivate. This does not automatically accept a moderation notice or confirm that Roblox has removed the restriction. Warnings appear separately, and missing dates show an unknown duration rather than guessing a permanent ban. Failed requests retain the last known result and show the failed check in the details. Cached results travel with the private vault; they are not included in layout exports.
 
@@ -66,7 +68,7 @@ The interface follows the same workflow with a new dark layout. This is not an e
 
 All new manager data is under **Data beside the executable**:
 
-- `accounts.vault`: account details, saved passwords, session cookies, cached moderation results, groups, favorites, recent targets, and saved links. Encrypted with a master password by default; readable when No master password is enabled.
+- `accounts.vault`: account details, saved passwords, session cookies, cached moderation and age-group results, groups, favorites, recent targets, and saved links. Encrypted with a master password by default; readable when No master password is enabled.
 - `accounts.vault.previous`: the previous save, using the protection mode that was active when it was saved. Removed account details or credentials can remain in this previous copy until another successful save.
 - `BrowserData/<device key>`: WebView2's browser storage for each PC/Windows user, including browser-protected cookies. Treat the entire Data folder as private.
 
@@ -74,7 +76,7 @@ All new manager data is under **Data beside the executable**:
 
 The app does not read your regular browser, the original third-party manager's account files, or Roblox's files. Its own older local vault can be imported through the first-run option. Master-password encryption protects the stored vault; malware on an unlocked PC can potentially read process memory. Do not put recovery codes or cookies in notes. Do not share your used Data folder.
 
-Startup and periodic session checks contact Roblox's identity and moderation APIs using saved cookies. Other requests happen when opening browsers, signing in, launching, or browsing servers. The embedded browser loads Roblox's normal resources and may make Microsoft runtime traffic. No app telemetry is implemented.
+Startup and periodic session checks contact Roblox's identity, moderation, and age-group APIs using saved cookies. Other requests happen when opening browsers, signing in, launching, or browsing servers. The embedded browser loads Roblox's normal resources and may make Microsoft runtime traffic. No app telemetry is implemented.
 
 ## Updates
 
@@ -88,7 +90,7 @@ Versions before 1.4.0 need one manual download to get this updater. The app is u
 
 ## Build from source
 
-Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.2` and `releases/RobloxAccountManager-1.5.2-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
+Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.3` and `releases/RobloxAccountManager-1.5.3-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
 
 The extracted app contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (this guide, licenses, and the browser-code example). Native runtime components use the standard per-user .NET temporary cache. Your account data stays in Data beside the EXE.
 

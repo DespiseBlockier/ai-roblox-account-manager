@@ -85,18 +85,36 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
     {
         string cookie;
         try { cookie = await ReadCookieForCheck(account); }
-        catch (Exception ex) { Moderation.Failure(account, ex); throw; }
+        catch (Exception ex) { Moderation.Failure(account, ex); AgeGroups.Failure(account, ex); throw; }
         RobloxApiError? restrictedIdentity = null;
         try { await VerifyCookie(account, cookie); }
         // Moderation can remain readable when a restriction blocks the normal identity endpoint.
         catch (RobloxApiError ex) when (ex.StatusCode is 401 or 403) { restrictedIdentity = ex; }
-        catch (Exception ex) { Moderation.Failure(account, ex); throw; }
+        catch (Exception ex) { Moderation.Failure(account, ex); AgeGroups.Failure(account, ex); throw; }
+        Exception? moderationError = null;
         try
         {
             Moderation.Apply(account, await api.Restriction(cookie));
             if (account.Restriction is not null && restrictedIdentity is not null) account.SessionStatus = "Restricted · open browser";
         }
-        catch (Exception ex) { Moderation.Failure(account, ex); throw; }
+        catch (Exception ex)
+        {
+            Moderation.Failure(account, ex);
+            if (ex is RobloxApiError { StatusCode: 429 }) { AgeGroups.Failure(account, ex); throw; }
+            moderationError = ex;
+        }
+        // Never attach age information from a session whose identity could not be verified.
+        if (restrictedIdentity is not null) AgeGroups.Failure(account, restrictedIdentity);
+        else
+        {
+            try { AgeGroups.Apply(account, await api.AgeGroup(cookie)); }
+            catch (Exception ex)
+            {
+                AgeGroups.Failure(account, ex);
+                if (ex is RobloxApiError { StatusCode: 429 }) throw;
+            }
+        }
+        if (moderationError is not null) throw moderationError;
     }
 
     public async Task Clear(Account account)
