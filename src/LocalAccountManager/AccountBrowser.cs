@@ -7,7 +7,8 @@ using System.Windows.Threading;
 
 namespace LocalAccountManager;
 
-public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity)
+public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity,
+    Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null)
 {
     private readonly Dictionary<Guid, AccountBrowser> browsers = [];
     private Task<CoreWebView2Environment>? environment;
@@ -40,7 +41,8 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
             if (visible) { current.ShowForUser(); if (navigate) current.Navigate(url); }
             return current;
         }
-        var browser = new AccountBrowser(account, env, api, onIdentity, guest);
+        var browser = new AccountBrowser(account, env, api, onIdentity, guest, onAddAccount);
+        browser.AccountAdded += saved => { if (guest) CloseAccount(saved); };
         browsers.Add(account.Id, browser);
         browser.Closed += (_, _) => browsers.Remove(account.Id);
         // WPF initializes WebView2 after Loaded. A helper starts minimized without taking focus,
@@ -170,14 +172,18 @@ public sealed partial class AccountBrowser : Window
     public bool IsClosed => disposed;
     public bool ShownForUser { get; private set; }
     public bool IsGuest { get; }
+    private readonly Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount;
+    public event Action<Account>? AccountAdded;
 
-    public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity, bool guest = false)
+    public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity, bool guest = false,
+        Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null)
     {
         Style = (Style)FindResource(typeof(Window));
         this.account = account; this.environment = environment; this.api = api; this.onIdentity = onIdentity;
         IsGuest = guest;
+        this.onAddAccount = onAddAccount;
         Title = "Roblox · " + account.Username + " · Account browser";
-        if (guest) { Title = "Roblox · Guest browser"; status.Text = "Fresh private guest session. Sign-ins here are not saved to your account list."; }
+        if (guest) { Title = "Roblox · Guest browser"; status.Text = "Fresh private guest session. Sign-ins here are not automatically saved to your account list."; }
         Width = 1160; Height = 820; MinWidth = 800; MinHeight = 600;
         var root = new DockPanel();
         var top = new DockPanel { Margin = new Thickness(12) };

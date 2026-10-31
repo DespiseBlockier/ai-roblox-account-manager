@@ -35,7 +35,7 @@ public partial class MainWindow : Window
         int removed = AccountEnrollment.RemoveLegacyPlaceholders(state);
         if (removed > 0) vault.Save(state);
         enrollment = new AccountEnrollment(state, () => vault.Save(state));
-        browsers = new BrowserHub(vault, this.api, Connected);
+        browsers = new BrowserHub(vault, this.api, Connected, AddBrowserAccount);
         InitializeComponent();
         Refresh();
         UpdateProtectionLabel();
@@ -77,6 +77,17 @@ public partial class MainWindow : Window
         enrollment.Commit(account, identity, cookie, saveCredential: fromLogin); Refresh();
         Status.Text = "Connected @" + identity.Name + ".";
         return Task.CompletedTask;
+    }
+
+    private async Task<Account> AddBrowserAccount(RobloxIdentity identity, string cookie, string? password, CancellationToken cancel)
+    {
+        while (checkingSessions && !closing) await Task.Delay(100, cancel);
+        cancel.ThrowIfCancellationRequested();
+        if (closing || loginQueue.IsRunning || addition is { IsCompleted: false }) throw new UserError("Finish the active sign-in operation before adding this browser account.");
+        SavePendingNotes();
+        var saved = BrowserAccountStore.SaveVerified(state, identity, cookie, password, () => vault.Save(state));
+        Refresh(); Status.Text = "Saved @" + saved.Username + " from browser code.";
+        return saved;
     }
 
     private async Task Run(Func<Task> work, bool showErrors = true)
@@ -321,7 +332,7 @@ public partial class MainWindow : Window
         {
             foreach (var a in accounts)
             {
-                if (closing || addition is { IsCompleted: false } || !state.Accounts.Contains(a)) break;
+                if (closing || BrowserCodeActive || addition is { IsCompleted: false } || !state.Accounts.Contains(a)) break;
                 if (ReferenceEquals(enrollment.Current, a)) continue;
                 a.SessionStatus = "Checking…"; Refresh();
                 try { await browsers.CheckHealth(a); }
@@ -461,7 +472,7 @@ public partial class MainWindow : Window
     }
     private void DisableMulti() { if (multi is not null) { multi.ReleaseMutex(); multi.Dispose(); multi = null; } }
     private void About_Click(object sender, RoutedEventArgs e) => ThemedMessageBox.Show(this,
-        "Roblox Account Manager · Portable 1.8.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection and authenticator unlock checks\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates, with optional automatic installation\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
+        "Roblox Account Manager · Portable 1.9.0\n\n• Single and bulk sign-in queues\n• Optional master-password protection and authenticator unlock checks\n• Session and ban checks on startup and every five minutes\n• Autofill restricted to Roblox's HTTPS login page\n• Publisher-signed updates, with optional automatic installation\n• No remote API, telemetry, or plugins\n\nComplete any Roblox verification yourself. Layout exports exclude passwords and cookies. Software running as your Windows user may access unlocked data.\n\nGPL-3.0-only. No warranty. Corresponding source and attribution are provided with the release.\n\nSee LICENSE, NOTICE.md and README.md in Docs for details.", "About", MessageBoxButton.OK);
     private async void Data_Click(object sender, RoutedEventArgs e) => await Run(() =>
     {
         var dialog = new DataWindow(this, vault, state, restored =>

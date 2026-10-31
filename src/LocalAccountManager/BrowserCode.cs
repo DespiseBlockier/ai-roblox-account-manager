@@ -39,7 +39,7 @@ public sealed record BrowserCodeRequest(string Url, string Code, TimeSpan Timeou
 
 public enum BrowserCodeOutcome { Completed, Stopped, Failed }
 public sealed record BrowserCodeResult(BrowserCodeOutcome Outcome, string Message);
-public sealed record BrowserCodeState(string Phase, string Message, List<SolverRequest>? Requests = null);
+public sealed record BrowserCodeState(string Phase, string Message, List<SolverRequest>? Requests = null, List<AddAccountRequest>? Accounts = null);
 
 public static class BrowserCodeRuntime
 {
@@ -68,6 +68,7 @@ public static class BrowserCodeRuntime
               };
             """ + "\n" + BrowserSolverRuntime.Source + "\n" + """
               const ram = Object.freeze({
+                addAccount: requestAddAccount,
                 account: identity === null ? null : Object.freeze(identity), signal: abort.signal,
                 capsolver: Object.freeze({register: (key, options) => registerSolver('capsolver', key, options)}),
                 solvex: Object.freeze({register: (key, options) => registerSolver('solvex', key, options)}),
@@ -83,8 +84,9 @@ public static class BrowserCodeRuntime
                 })
               });
               Object.defineProperty(window, key, {configurable:true, enumerable:false, value:Object.freeze({
-                snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4)}),
+                snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4), accounts:accountOutbox.splice(0,1)}),
                 reply: (id, result) => { const call = solverPending.get(id); if (call) { solverPending.delete(id); call.resolve(result); } },
+                replyAccount: (id, result) => { const call = accountPending.get(id); if (call) { accountPending.delete(id); result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not save the current account.')); } },
                 stop: () => { abort.abort(); finish('stopped', 'Stopped'); }
               })});
               setTimeout(async () => {
@@ -109,6 +111,11 @@ public static class BrowserCodeRuntime
         if (id < 1) throw new UserError("Invalid solver request identifier.");
         return "window[" + Key(key) + "]?.reply(" + id.ToString(CultureInfo.InvariantCulture) + "," + JsonSerializer.Serialize(response) + ");";
     }
+    public static string ReplyAccount(string key, int id, object response)
+    {
+        if (id < 1) throw new UserError("Invalid account request identifier.");
+        return "window[" + Key(key) + "]?.replyAccount(" + id.ToString(CultureInfo.InvariantCulture) + "," + JsonSerializer.Serialize(response) + ");";
+    }
     public static BrowserCodeState Parse(string json)
     {
         if (json.Length > 280_000) throw new UserError("Browser code returned too much status data.");
@@ -127,7 +134,14 @@ public static class BrowserCodeRuntime
                 requests = JsonSerializer.Deserialize<List<SolverRequest>>(pending.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (requests?.Any(r => r is null || r.Id < 1) == true) throw new UserError("Invalid solver request.");
             }
-            return new(phase, message, requests);
+            List<AddAccountRequest>? accounts = null;
+            if (doc.RootElement.TryGetProperty("accounts", out var additions))
+            {
+                if (additions.ValueKind != JsonValueKind.Array || additions.GetArrayLength() > 1) throw new UserError("Only one account save can run at a time.");
+                accounts = JsonSerializer.Deserialize<List<AddAccountRequest>>(additions.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                foreach (var addition in accounts ?? []) { if (addition is null || addition.Id < 1) throw new UserError("Invalid account request."); BrowserAccountStore.ValidatePassword(addition.Password); }
+            }
+            return new(phase, message, requests, accounts);
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
         { throw new UserError("Could not read browser-code status. The queue stopped."); }

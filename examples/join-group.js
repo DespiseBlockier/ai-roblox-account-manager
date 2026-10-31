@@ -1,4 +1,4 @@
-// Generate this example with your group/community ID in "Open browser with code".
+// Set groupId to your community ID. Use matching native membership confirmation.
 // A pending join request is NOT membership. Keep the browser open for approval/verification.
 const groupId = /* GROUP_ID */ 12345678;
 const groupApi = 'https://groups.roblox.com';

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -27,7 +28,9 @@ public sealed class BrowserCodeWindow : Window
         FontFamily = new FontFamily("Consolas"), FontSize = 12, IsUndoEnabled = false
     };
     private readonly CheckBox confirmGroup = new() { Content = "Confirm actual membership in this group before advancing" };
-    private readonly Button generate = new() { Name = "GenerateExample", Content = "Generate join-group example" };
+    private readonly TabControl pages = new() { Name = "BrowserCodeTabs" };
+    private readonly ListBox examples = new() { Name = "ExampleList", DisplayMemberPath = "Name" };
+    private readonly Button useExample = new() { Name = "UseExample", Content = "Use example" };
     private readonly Button start = new() { Name = "StartCodeRun", Content = "Run on selected accounts" };
     private readonly Button stop = new() { Content = "Stop queue", IsEnabled = false };
     private readonly DataGrid results = new() { RowHeight = 42, SelectionMode = DataGridSelectionMode.Single };
@@ -37,8 +40,7 @@ public sealed class BrowserCodeWindow : Window
     private CancellationTokenSource? cancellation;
     private readonly BrowserHub browsers;
     private readonly Func<string?> canStart;
-    private long? generatedGroupId;
-    private BrowserCodeHelpWindow? docs;
+    private bool groupExampleLoaded;
     public bool IsRunning { get; private set; }
     public bool WasClosed { get; private set; }
     public event EventHandler? QueueEnded;
@@ -55,8 +57,8 @@ public sealed class BrowserCodeWindow : Window
         {
             rows.Add(new BrowserCodeRow(new Account { Username = "", DisplayName = "Guest" }, guest: true));
             Title = "Open browser with code · Guest browser"; code.Text = BrowserCodeRuntime.GuestStarter;
-            start.Content = "Run in guest browser"; generate.IsEnabled = confirmGroup.IsEnabled = group.IsEnabled = false;
-            feedback.Text = "Fresh private guest session. ram.account is null. No saved account will be opened or added.";
+            start.Content = "Run in guest browser"; confirmGroup.IsEnabled = group.IsEnabled = false;
+            feedback.Text = "Fresh private guest session. ram.account is null. Saved accounts are not restored. ram.addAccount() saves only when your code explicitly calls it.";
         }
         var root = new Grid { Margin = new Thickness(22) };
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -65,27 +67,45 @@ public sealed class BrowserCodeWindow : Window
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var header = new StackPanel();
         var titleLine = new DockPanel();
-        var help = new Button { Name = "JavaScriptDocsButton", Content = "JS docs · ram helpers", Margin = new Thickness(12, 0, 0, 0) };
-        help.Click += (_, _) =>
-        {
-            if (docs is not null) { docs.Activate(); return; }
-            docs = new BrowserCodeHelpWindow(this); docs.Closed += (_, _) => docs = null; docs.Show();
-        };
-        DockPanel.SetDock(help, Dock.Right); titleLine.Children.Add(help);
         titleLine.Children.Add(new TextBlock { Text = accounts.Count == 0 ? "JavaScript · Guest browser" : "JavaScript · " + accounts.Count + " selected account(s)", FontSize = 22, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         header.Children.Add(titleLine);
         header.Children.Add(new TextBlock { Text = "ram.done() closes the current browser and advances. ram.stop() closes it and stops the queue. Closing a browser also stops the queue.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 10) });
         header.Children.Add(new TextBlock { Text = "Starting Roblox URL", Margin = new Thickness(0, 0, 0, 5) }); header.Children.Add(url);
-        header.Children.Add(new TextBlock { Text = "Group/community ID or link · example generator", Margin = new Thickness(0, 12, 0, 0) });
-        var groupLine = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-        DockPanel.SetDock(generate, Dock.Right); groupLine.Children.Add(generate); groupLine.Children.Add(group); header.Children.Add(groupLine);
-        group.ToolTip = "Group/community ID or an HTTPS Roblox group link";
-        header.Children.Add(confirmGroup);
         var time = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         time.Children.Add(new TextBlock { Text = "Timeout per account (minutes)  ", VerticalAlignment = VerticalAlignment.Center }); time.Children.Add(minutes);
-        time.Children.Add(new TextBlock { Text = "  Verification and approval remain on Roblox. This example does not make payouts.", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap }); header.Children.Add(time);
+        time.Children.Add(new TextBlock { Text = "  Run only code you trust.", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap }); header.Children.Add(time);
         root.Children.Add(header);
-        Grid.SetRow(code, 1); code.Margin = new Thickness(0, 4, 0, 12); root.Children.Add(code);
+        var codePage = new TabItem { Name = "CodeTab", Header = "Code" };
+        var docsPage = new TabItem { Name = "DocsTab", Header = "Docs" };
+        var examplesPage = new TabItem { Name = "ExamplesTab", Header = "Examples" };
+        var editor = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var verification = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        verification.Children.Add(confirmGroup);
+        verification.Children.Add(new TextBlock { Text = "Group/community ID or link · optional membership confirmation", Margin = new Thickness(0, 0, 0, 5) });
+        verification.Children.Add(group); DockPanel.SetDock(verification, Dock.Bottom); editor.Children.Add(verification); editor.Children.Add(code); codePage.Content = editor;
+        docsPage.Content = new TextBox { Name = "JavaScriptDocs", Text = BrowserCodeHelpWindow.Reference, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new FontFamily("Consolas"), FontSize = 12, Margin = new Thickness(0, 8, 0, 0) };
+        var library = new Grid { Margin = new Thickness(0, 8, 0, 0) }; library.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) }); library.ColumnDefinitions.Add(new ColumnDefinition());
+        examples.ItemsSource = BrowserCodeExamples.All; examples.Margin = new Thickness(0, 0, 12, 0); library.Children.Add(examples);
+        var detail = new DockPanel(); Grid.SetColumn(detail, 1); library.Children.Add(detail);
+        var description = new TextBlock { Name = "ExampleDescription", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; DockPanel.SetDock(description, Dock.Top); detail.Children.Add(description);
+        useExample.Style = (Style)FindResource("Primary"); useExample.Margin = new Thickness(0, 10, 0, 0); useExample.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(useExample, Dock.Bottom); detail.Children.Add(useExample);
+        var preview = new TextBox { Name = "ExamplePreview", IsReadOnly = true, AcceptsReturn = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new FontFamily("Consolas"), FontSize = 12 }; detail.Children.Add(preview);
+        examples.SelectionChanged += (_, _) =>
+        {
+            if (examples.SelectedItem is not BrowserCodeExample example) return;
+            description.Text = example.Description + (rows[0].IsGuest && example.RequiresAccount ? " Select a saved account to use this example." : example.GuestOnly && !rows[0].IsGuest ? " Open the editor with no account selected to use a guest browser." : "");
+            preview.Text = example.Code; useExample.IsEnabled = !IsRunning && (!example.RequiresAccount || !rows[0].IsGuest) && (!example.GuestOnly || rows[0].IsGuest);
+        };
+        useExample.Click += (_, _) =>
+        {
+            if (IsRunning || examples.SelectedItem is not BrowserCodeExample example || (example.RequiresAccount && rows[0].IsGuest || example.GuestOnly && !rows[0].IsGuest)) return;
+            code.Text = example.Code; groupExampleLoaded = example.Group; confirmGroup.IsChecked = example.Group;
+            if (example.Group) group.Clear();
+            pages.SelectedItem = codePage; feedback.Text = "Example copied to Code. Review its settings before running; nothing has run yet.";
+        };
+        examples.SelectedIndex = rows[0].IsGuest ? 1 : 0;
+        examplesPage.Content = library; pages.Items.Add(codePage); pages.Items.Add(docsPage); pages.Items.Add(examplesPage); pages.SelectedIndex = 0;
+        Grid.SetRow(pages, 1); pages.Margin = new Thickness(0, 4, 0, 12); root.Children.Add(pages);
         results.Columns.Add(new DataGridTextColumn { Header = "ACCOUNT", Binding = new Binding("Username"), Width = 160 });
         results.Columns.Add(new DataGridTextColumn { Header = "RESULT", Binding = new Binding("Result"), Width = 100 });
         results.Columns.Add(new DataGridTextColumn { Header = "STATUS", Binding = new Binding("Message"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
@@ -95,21 +115,14 @@ public sealed class BrowserCodeWindow : Window
         start.Style = (Style)FindResource("Primary"); buttons.Children.Add(start); buttons.Children.Add(stop);
         DockPanel.SetDock(buttons, Dock.Right); footer.Children.Add(buttons); footer.Children.Add(feedback);
         Grid.SetRow(footer, 3); root.Children.Add(footer); Content = root;
-        generate.Click += (_, _) =>
-        {
-            try
-            {
-                long id = GroupTarget.Parse(group.Text); url.Text = GroupTarget.Url(id);
-                generatedGroupId = id;
-                code.Text = BrowserCodeRuntime.JoinGroupExample(id); confirmGroup.IsChecked = true;
-                feedback.Text = "Example generated. It advances only after membership is confirmed; pending approval keeps this account open.";
-            }
-            catch (Exception ex) { feedback.Text = Security.Friendly(ex); }
-        };
         start.Click += async (_, _) => await Run();
+        code.TextChanged += (_, _) =>
+        {
+            if (groupExampleLoaded && !Regex.IsMatch(code.Text, @"const\s+groupId\s*=\s*[0-9]+\s*;")) groupExampleLoaded = false;
+        };
         stop.Click += (_, _) => { cancellation?.Cancel(); feedback.Text = "Stopping the current browser and queue…"; };
         Closing += (_, _) => cancellation?.Cancel();
-        Closed += (_, _) => { WasClosed = true; docs?.Close(); code.Clear(); };
+        Closed += (_, _) => { WasClosed = true; code.Clear(); };
     }
 
     private async Task Run()
@@ -120,8 +133,12 @@ public sealed class BrowserCodeWindow : Window
             if (canStart() is string error) throw new UserError(error);
             if (!int.TryParse(minutes.Text, out int timeout) || timeout is < 1 or > 120) throw new UserError("Enter a timeout from 1 to 120 minutes.");
             var request = new BrowserCodeRequest(url.Text.Trim(), code.Text, TimeSpan.FromMinutes(timeout), confirmGroup.IsChecked == true ? GroupTarget.Parse(group.Text) : null, Guest: rows[0].IsGuest).Validate();
-            if (generatedGroupId is long generated && request.ConfirmGroupId is long selected && generated != selected)
-                throw new UserError("The group ID changed. Generate the group example again before running it.");
+            if (groupExampleLoaded)
+            {
+                var match = Regex.Match(code.Text, @"const\s+groupId\s*=\s*([0-9]+)\s*;");
+                if (!match.Success || !GameTarget.TryId(match.Groups[1].Value, out long exampleGroup)) throw new UserError("Set a valid groupId in the example code before running.");
+                if (request.ConfirmGroupId != exampleGroup) throw new UserError("The code groupId and membership confirmation must match.");
+            }
             cancellation = new CancellationTokenSource();
             IsRunning = true; SetControls(false);
             foreach (var row in rows) { row.Result = "Queued"; row.Message = ""; } results.Items.Refresh();
@@ -158,7 +175,8 @@ public sealed class BrowserCodeWindow : Window
     private void SetControls(bool enabled)
     {
         start.IsEnabled = url.IsEnabled = minutes.IsEnabled = enabled;
-        generate.IsEnabled = group.IsEnabled = confirmGroup.IsEnabled = enabled && !rows[0].IsGuest;
+        group.IsEnabled = confirmGroup.IsEnabled = enabled && !rows[0].IsGuest;
+        useExample.IsEnabled = enabled && examples.SelectedItem is BrowserCodeExample example && (!example.RequiresAccount || !rows[0].IsGuest) && (!example.GuestOnly || rows[0].IsGuest);
         code.IsReadOnly = !enabled; stop.IsEnabled = !enabled;
     }
 }

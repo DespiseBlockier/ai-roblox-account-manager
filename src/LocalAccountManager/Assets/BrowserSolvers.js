@@ -1,5 +1,14 @@
 // Compiled into the application. No scripts are downloaded from a solver service.
 const solverOutbox = [], solverPending = new Map();
+const accountOutbox = [], accountPending = new Map();
+let accountSequence = 0;
+const requestAddAccount = password => new Promise((resolve, reject) => {
+  if (abort.signal.aborted) { reject(new Error('Stopped')); return; }
+  if (password != null && (typeof password !== 'string' || !password.length || password.length > 1024 || /[\x00-\x1f\x7f]/.test(password))) { reject(new Error('Supply a password of 1–1024 characters, or omit it.')); return; }
+  if (accountPending.size) { reject(new Error('An account save is already running.')); return; }
+  const id = ++accountSequence;
+  accountPending.set(id, {resolve, reject}); accountOutbox.push({id, password:password ?? null});
+});
 let solverSequence = 0;
 const solverRequest = (provider, action, apiKey, task) => new Promise((resolve, reject) => {
   if (abort.signal.aborted) { reject(new Error('Stopped')); return; }
@@ -11,6 +20,8 @@ const solverRequest = (provider, action, apiKey, task) => new Promise((resolve, 
 abort.signal.addEventListener('abort', () => {
   for (const call of solverPending.values()) call.reject(new Error('Stopped'));
   solverPending.clear(); solverOutbox.length = 0;
+  for (const call of accountPending.values()) call.reject(new Error('Stopped'));
+  accountPending.clear(); accountOutbox.length = 0;
 }, {once:true});
 const registerSolver = (provider, apiKey, options = {}) => {
   if (typeof apiKey !== 'string' || !apiKey.length || apiKey.length > 512 || /[\x00-\x1f\x7f]/.test(apiKey)) throw new Error('Enter a valid solver API key.');

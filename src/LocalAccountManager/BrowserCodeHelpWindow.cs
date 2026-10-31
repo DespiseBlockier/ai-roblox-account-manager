@@ -69,6 +69,17 @@ public sealed class BrowserCodeHelpWindow : Window
             credentials: 'include', signal: ram.signal
           });
 
+        await ram.addAccount(optionalPassword)
+          Save the browser's current authenticated Roblox account to the manager. The native app reads its session cookie and verifies the identity with Roblox. Only {success, userId, username} is returned to JavaScript; the cookie is never returned.
+
+          const saved = await ram.addAccount('password-you-want-to-save');
+          ram.status('Saved @' + saved.username);
+          ram.done();
+
+          Omit the argument to preserve an existing saved password, or leave a new account without a saved password. A supplied password is stored locally, not validated or changed on Roblox. Existing accounts are matched by verified user ID, preserving their group, notes, and other settings. Storage follows Vault security. Saving happens before the promise resolves; Stop does not undo a completed save.
+
+          This requires an already authenticated session in the current document. A signed-out/expired session rejects without adding a placeholder. A selected-account browser cannot save a different user's session; use guest mode for a different account. Navigation stops the script, so this function alone is not a complete automatic signup workflow.
+
         SOLVER HELPERS
 
         const solver = ram.capsolver.register('YOUR_API_KEY');
@@ -135,12 +146,12 @@ public sealed class BrowserCodeHelpWindow : Window
 
         GROUP EXAMPLE
 
-        Enter a community ID or Roblox community link and choose Generate join-group example. Review the script before running. Keep native membership confirmation enabled. Pending approval is not a successful join; verification and approval may need your action in Roblox. This example does not make payouts.
+        Open Examples, select Join a group, and choose Use example. Set groupId in the copied code and enter the matching group/community ID in native membership confirmation. Review the script before running. Pending approval is not a successful join; verification and approval may need your action in Roblox. This example does not make payouts.
 
         PERMISSIONS
 
         Your code runs with the selected Roblox website session's permissions. It can perform account actions and browser requests. Only run code you trust. Already-sent requests cannot be undone by Stop.
 
-        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver requests use a bounded polling channel to the fixed official API hosts. Never paste Roblox passwords/cookies or unrelated private data into scripts.
+        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver and account-save requests use a bounded polling channel to the fixed official API hosts. Never paste Roblox passwords/cookies or unrelated private data into scripts.
         """;
 }

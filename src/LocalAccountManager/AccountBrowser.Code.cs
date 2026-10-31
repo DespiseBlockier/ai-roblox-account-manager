@@ -20,6 +20,31 @@ public sealed partial class AccountBrowser
         using var solvers = new BrowserSolverClient();
         var solverJobs = new List<Task>();
         var solverIds = new HashSet<int>();
+        Task? accountSave = null;
+        var accountRequestIds = new HashSet<int>();
+        async Task AddCurrentAccount(AddAccountRequest call)
+        {
+            object reply;
+            try
+            {
+                if (onAddAccount is null) throw new UserError("This browser is not connected to an account manager.");
+                BrowserAccountStore.ValidatePassword(call.Password);
+                string cookie = await ReadSession().WaitAsync(token);
+                var identity = await api.Identity(cookie).WaitAsync(token);
+                token.ThrowIfCancellationRequested();
+                if (disposed || !Security.IsBrowserPage(web.CoreWebView2.Source) || await ReadSession().WaitAsync(token) != cookie)
+                    throw new UserError("The browser session changed. Try adding the current account again.");
+                if (!IsGuest && identity.Id != account.UserId) throw new UserError("This browser no longer matches its selected account. Use a guest browser to add a different account.");
+                var saved = await onAddAccount(identity, cookie, call.Password, token);
+                AccountAdded?.Invoke(saved);
+                reply = new { success = true, userId = saved.UserId.ToString(System.Globalization.CultureInfo.InvariantCulture), username = saved.Username };
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) { reply = new { success = false, error = Security.Friendly(ex) }; }
+            finally { call.Password = null; }
+            if (!disposed && !token.IsCancellationRequested)
+                try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplyAccount(key, call.Id, reply)); } catch { }
+        }
         async Task Solve(SolverRequest call)
         {
             try
@@ -58,6 +83,12 @@ public sealed partial class AccountBrowser
                     throw new UserError("The browser left the signed-in Roblox page. The queue stopped.");
                 string raw = await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.Read(key)).WaitAsync(TimeSpan.FromSeconds(5), token);
                 var state = BrowserCodeRuntime.Parse(raw);
+                if (state.Accounts is { Count: > 0 } additions)
+                {
+                    var call = additions[0];
+                    if (accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
+                    accountSave = AddCurrentAccount(call);
+                }
                 solverJobs.RemoveAll(job => job.IsCompleted);
                 if (state.Requests is { Count: > 0 } calls)
                 {
@@ -99,7 +130,7 @@ public sealed partial class AccountBrowser
         finally
         {
             linked.Cancel();
-            try { await Task.WhenAll(solverJobs).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+            try { await Task.WhenAll(accountSave is null ? solverJobs : solverJobs.Append(accountSave)).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
             IsCodeRunning = false;
             if (!disposed)
             {
