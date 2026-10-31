@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace LocalAccountManager;
 
-public sealed class Vault : IDisposable
+public sealed partial class Vault : IDisposable
 {
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("LocalAccountManager.Metadata.v1");
     private static readonly byte[] BackupMagic = Encoding.ASCII.GetBytes("RAMLAY01");

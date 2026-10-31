@@ -88,6 +88,18 @@ Only application files and Docs are replaced. Data is preserved, and interrupted
 
 Versions before 1.4.0 need one manual download to get this updater. The app is unofficial and is not an independently audited security product.
 
+## Launch arguments
+
+To unlock an existing protected vault from CMD:
+
+```cmd
+RobloxAccountManager.exe "your master password"
+```
+
+You can also use `--password "your master password"`, and combine it with `--data-dir "D:\Manager\Data"`. Quote values containing spaces. `--help` lists the options. The password is the vault's master password, not a Roblox account password. A wrong password returns to the regular unlock screen; first-run setup and legacy conversion still require the setup screen. Command-line passwords may be visible in process listings and shell history. The app never logs argument values.
+
+Updates started from v1.5.3 or newer automatically reopen the currently unlocked vault. They use a one-use token protected by Windows for the current user, bound to the vault and update path, expiring after five minutes. The token is consumed on restart. The master password is not written to disk or forwarded in the restart command. A later normal launch still asks for the master password. If the token cannot be used, the normal unlock screen appears. Versions before v1.5.3 need the usual unlock once after installing this feature.
+
 ## Build from source
 
 Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.5.3` and `releases/RobloxAccountManager-1.5.3-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.

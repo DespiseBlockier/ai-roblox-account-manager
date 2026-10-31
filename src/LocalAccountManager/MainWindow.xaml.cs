@@ -104,6 +104,7 @@ public partial class MainWindow : Window
         {
             if (addition is { IsCompleted: false } || enrollment.Current is not null) throw new UserError("Finish or close the current sign-in queue before updating.");
             UpdateButton.IsEnabled = false;
+            string? unlockToken = null;
             try
             {
                 vault.Save(state);
@@ -111,12 +112,20 @@ public partial class MainWindow : Window
                 var progress = new Progress<double>(value => { if (!closing) UpdateStatus.Text = $"Downloading update… {value:P0}"; });
                 string folder = await updates.PrepareAsync(availableUpdate, AppContext.BaseDirectory, progress, updateCancel.Token);
                 UpdateStatus.Text = "Preparing update and restart…";
+                unlockToken = vault.CreateUpdateToken(AppContext.BaseDirectory, folder);
                 using var helper = await UpdateInstaller.StartHelperAsync(AppContext.BaseDirectory, folder, vault.Root);
                 busy = false;
                 try { Close(); }
                 finally { if (!closing && !helper.HasExited) helper.Kill(); }
             }
-            finally { if (!closing) UpdateButton.IsEnabled = true; }
+            finally
+            {
+                if (!closing)
+                {
+                    if (unlockToken is not null) { try { Vault.DeleteUpdateToken(AppContext.BaseDirectory, unlockToken); } catch { } }
+                    UpdateButton.IsEnabled = true;
+                }
+            }
         });
     }
 

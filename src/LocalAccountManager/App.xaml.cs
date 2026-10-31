@@ -12,28 +12,29 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
         if (e.Args.FirstOrDefault() == "--apply-update")
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Shutdown(await UpdateInstaller.RunHelperAsync(e.Args)); return;
         }
-        UpdateInstaller.CleanupCompleted(AppContext.BaseDirectory);
-        string root = Vault.DefaultRoot(AppContext.BaseDirectory);
-        // This explicit option permits isolated, credential-free UI and storage tests.
-        if (e.Args.Length == 2 && e.Args[0] == "--data-dir") root = Path.GetFullPath(e.Args[1]);
-        string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(root).ToUpperInvariant())));
-        instance = new Mutex(true, "Local\\LocalRobloxAccountManager-" + key, out bool created);
-        if (!created) { MessageBox.Show("This account manager is already open for this data folder."); Shutdown(); return; }
         try
         {
-            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            using var options = LaunchOptions.Parse(e.Args);
+            if (options.Help) { MessageBox.Show(LaunchOptions.Usage, "Launch arguments", MessageBoxButton.OK, MessageBoxImage.Information); Shutdown(); return; }
+            UpdateInstaller.CleanupCompleted(AppContext.BaseDirectory);
+            Vault.CleanupExpiredUpdateTokens(AppContext.BaseDirectory);
+            string root = options.DataDirectory ?? Vault.DefaultRoot(AppContext.BaseDirectory);
+            string key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(root).ToUpperInvariant())));
+            instance = new Mutex(true, "Local\\LocalRobloxAccountManager-" + key, out bool created);
+            if (!created) { MessageBox.Show("This account manager is already open for this data folder."); Shutdown(); return; }
             vault = new Vault(root);
             string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalRobloxAccountManager", "accounts.vault");
-            AppState state;
-            if (vault.IsPasswordless) state = vault.UnlockWithoutPassword();
-            else
+            AppState? state = options.TryUnlock(vault, AppContext.BaseDirectory, out string feedback);
+            if (state is null && vault.IsPasswordless) state = vault.UnlockWithoutPassword();
+            if (state is null)
             {
-                var unlock = new UnlockVaultWindow(vault, legacy);
+                var unlock = new UnlockVaultWindow(vault, legacy, initialFeedback: feedback);
                 if (unlock.ShowDialog() != true || unlock.State is null) { Shutdown(); return; }
                 state = unlock.State;
             }
@@ -44,7 +45,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show(Security.Friendly(ex) + "\n\nData folder: " + root + "\nThe app has stopped to preserve your data.", "Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Security.Friendly(ex) + (vault is null ? "" : "\n\nData folder: " + vault.Root) + "\nThe app has stopped to preserve your data.", "Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }

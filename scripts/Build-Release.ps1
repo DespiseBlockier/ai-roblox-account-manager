@@ -91,7 +91,7 @@ Use Check for updates, then Update & restart to install a verified release.
     $files = @(Get-ChildItem -LiteralPath $package -File -Recurse)
     foreach ($file in $files) {
         $relative = $file.FullName.Substring($package.Length + 1)
-        if ($relative -match '(^|[\\/])(Data|BrowserData|test-results|\.tools|\.git)([\\/]|$)' -or $file.Name -match '(?i)\.(vault|previous|ramlayout|backup|env|pdb)$') {
+        if ($relative -match '(^|[\\/])(Data|BrowserData|test-results|\.tools|\.git|\.updates)([\\/]|$)' -or $file.Name -match '(?i)\.(vault|previous|ramlayout|backup|env|pdb|dpapi|pfx|key)$') {
             throw 'Private or development data appeared in compiler output. Release refused.'
         }
     }

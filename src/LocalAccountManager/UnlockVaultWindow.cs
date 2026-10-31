@@ -7,7 +7,7 @@ namespace LocalAccountManager;
 public sealed class UnlockVaultWindow : Window
 {
     public AppState? State { get; private set; }
-    public UnlockVaultWindow(Vault vault, string? legacyFile = null, AppState? existingState = null)
+    public UnlockVaultWindow(Vault vault, string? legacyFile = null, AppState? existingState = null, string initialFeedback = "")
     {
         Style = (Style)FindResource(typeof(Window));
         bool changing = existingState is not null, create = !vault.Exists, convert = vault.Exists && !vault.IsPortable;
@@ -51,7 +51,7 @@ public sealed class UnlockVaultWindow : Window
         var import = new CheckBox { Content = "Import my accounts from the previous local installation on this PC", IsChecked = hasLegacy, Visibility = hasLegacy ? Visibility.Visible : Visibility.Collapsed };
         panel.Children.Add(import);
         if (convert) panel.Children.Add(new TextBlock { Text = "The old Windows-bound vault will be converted on this PC.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
-        var feedback = new TextBlock { Name = "VaultFeedback", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) }; panel.Children.Add(feedback);
+        var feedback = new TextBlock { Name = "VaultFeedback", Text = initialFeedback, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) }; panel.Children.Add(feedback);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
         buttons.Children.Add(new Button { Content = "Cancel", IsCancel = true });
         var unlock = new Button { Name = "UnlockVault", Content = changing ? "Save protection settings" : create || convert ? "Create portable vault" : "Unlock", IsDefault = true, Style = (Style)FindResource("Primary") };

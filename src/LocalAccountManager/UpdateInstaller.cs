@@ -171,7 +171,7 @@ public static class UpdateInstaller
                 ApplyPayload(payload, root, Path.Combine(work, "backup"), hashes);
             File.WriteAllText(Path.Combine(work, "completed"), "completed");
             File.Delete(Path.Combine(parent, "last-error.txt"));
-            Restart(root, dataRoot); return 0;
+            Restart(root, dataRoot, work); return 0;
         }
         catch (Exception error)
         {
@@ -181,7 +181,7 @@ public static class UpdateInstaller
                 try { File.WriteAllText(Path.Combine(work, "failure.txt"), reason); } catch { }
                 if (parentExited)
                 {
-                    try { File.WriteAllText(Path.Combine(root, ".updates", "last-error.txt"), "Update failed; check the backup in .updates if recovery is needed."); Restart(root, dataRoot); } catch { }
+                    try { File.WriteAllText(Path.Combine(root, ".updates", "last-error.txt"), "Update failed; check the backup in .updates if recovery is needed."); Restart(root, dataRoot, work); } catch { }
                 }
             }
             return 1;
@@ -192,10 +192,13 @@ public static class UpdateInstaller
         using var input = File.OpenRead(path); if (input.Length > max) throw new UserError("Update information is too large.");
         byte[] result = new byte[(int)input.Length]; input.ReadExactly(result); return result;
     }
-    private static void Restart(string root, string dataRoot)
+    private static void Restart(string root, string dataRoot, string work)
     {
         var start = new ProcessStartInfo(Path.Combine(root, ExeName)) { UseShellExecute = false, WorkingDirectory = root };
-        start.ArgumentList.Add("--data-dir"); start.ArgumentList.Add(dataRoot); Process.Start(start)?.Dispose();
+        start.ArgumentList.Add("--data-dir"); start.ArgumentList.Add(dataRoot);
+        string token = Path.Combine(work, "unlock-once.dpapi");
+        if (File.Exists(token)) { start.ArgumentList.Add("--unlock-token"); start.ArgumentList.Add(token); }
+        Process.Start(start)?.Dispose();
     }
     public static void CleanupCompleted(string root)
     {
