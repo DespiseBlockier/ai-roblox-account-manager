@@ -1,6 +1,16 @@
 // Compiled into the application. No scripts are downloaded from a solver service.
 const solverOutbox = [], solverPending = new Map();
 const accountOutbox = [], accountPending = new Map();
+const signupOutbox = [], signupPending = new Map();
+let signupUsed = false;
+const requestCreateAccount = options => new Promise((resolve, reject) => {
+  if (abort.signal.aborted) { reject(new Error('Stopped')); return; }
+  if (identity !== null) { reject(new Error('Open a guest browser with no account selected to create an account.')); return; }
+  if (signupUsed) { reject(new Error('Only one signup is allowed per run.')); return; }
+  if (!options || typeof options !== 'object' || JSON.stringify(options).length > 12000) { reject(new Error('Invalid signup options.')); return; }
+  const copy = JSON.parse(JSON.stringify(options)); copy.id = 1;
+  signupUsed = true; signupPending.set(1, {resolve, reject}); signupOutbox.push(copy);
+});
 let accountSequence = 0;
 const requestAddAccount = password => new Promise((resolve, reject) => {
   if (abort.signal.aborted) { reject(new Error('Stopped')); return; }
@@ -22,6 +32,8 @@ abort.signal.addEventListener('abort', () => {
   solverPending.clear(); solverOutbox.length = 0;
   for (const call of accountPending.values()) call.reject(new Error('Stopped'));
   accountPending.clear(); accountOutbox.length = 0;
+  for (const call of signupPending.values()) call.reject(new Error('Stopped'));
+  signupPending.clear(); signupOutbox.length = 0;
 }, {once:true});
 const registerSolver = (provider, apiKey, options = {}) => {
   if (typeof apiKey !== 'string' || !apiKey.length || apiKey.length > 512 || /[\x00-\x1f\x7f]/.test(apiKey)) throw new Error('Enter a valid solver API key.');

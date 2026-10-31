@@ -21,6 +21,8 @@ public sealed partial class AccountBrowser
         var solverJobs = new List<Task>();
         var solverIds = new HashSet<int>();
         Task? accountSave = null;
+        Task? signupJob = null;
+        bool signupUsed = false;
         var accountRequestIds = new HashSet<int>();
         async Task AddCurrentAccount(AddAccountRequest call)
         {
@@ -44,6 +46,27 @@ public sealed partial class AccountBrowser
             finally { call.Password = null; }
             if (!disposed && !token.IsCancellationRequested)
                 try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplyAccount(key, call.Id, reply)); } catch { }
+        }
+        async Task CreateAccount(SignupRequest call)
+        {
+            object reply;
+            try
+            {
+                if (!IsGuest) throw new UserError("Open the editor with no account selected to create an account.");
+                call.Validate();
+                if (onAddAccount is null) throw new UserError("This browser is not connected to an account manager.");
+                var signup = new BrowserSignupClient(solvers.Execute);
+                reply = await signup.CreateAndSave(call, web.CoreWebView2.Settings.UserAgent, async (identity, cookie, password, cancel) =>
+                {
+                    var saved = await onAddAccount(identity, cookie, password, cancel);
+                    AccountAdded?.Invoke(saved); return saved;
+                }, message => { if (!disposed && !token.IsCancellationRequested) { status.Text = message; progress(message); } }, token);
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) { reply = new { success = false, error = Security.Friendly(ex) }; }
+            finally { call.ClearSecrets(); }
+            if (!disposed && !token.IsCancellationRequested)
+                try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplySignup(key, call.Id, reply)); } catch { }
         }
         async Task Solve(SolverRequest call)
         {
@@ -86,8 +109,13 @@ public sealed partial class AccountBrowser
                 if (state.Accounts is { Count: > 0 } additions)
                 {
                     var call = additions[0];
-                    if (accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
+                    if (signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
                     accountSave = AddCurrentAccount(call);
+                }
+                if (state.Signups is { Count: > 0 } signups)
+                {
+                    if (signupUsed || accountSave is { IsCompleted: false }) throw new UserError("Only one signup is allowed per run; wait for any account save to finish.");
+                    signupUsed = true; signupJob = CreateAccount(signups[0]);
                 }
                 solverJobs.RemoveAll(job => job.IsCompleted);
                 if (state.Requests is { Count: > 0 } calls)
@@ -130,7 +158,7 @@ public sealed partial class AccountBrowser
         finally
         {
             linked.Cancel();
-            try { await Task.WhenAll(accountSave is null ? solverJobs : solverJobs.Append(accountSave)).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+            try { await Task.WhenAll(solverJobs.Concat(new[] { accountSave, signupJob }.OfType<Task>())).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
             IsCodeRunning = false;
             if (!disposed)
             {

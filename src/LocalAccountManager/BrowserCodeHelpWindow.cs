@@ -116,6 +116,23 @@ public sealed class BrowserCodeHelpWindow : Window
         • Providers may charge for submitted tasks. Registration is local; status calls the provider balance endpoint. Provider billing is outside the manager's control.
         • API keys and proxy credentials exist in your running script. Only use scripts/pages you trust. The editor clears on close. The app does not save solver keys, send saved Roblox passwords/cookies, follow solver redirects, or accept custom API hosts/callback URLs.
 
+        CREATE ONE ACCOUNT AND SAVE IT
+
+        const saved = await ram.createAccount({
+          username: 'YOUR_USERNAME', password: 'YOUR_PASSWORD',
+          birthday: 'YYYY-MM-DD', acceptTerms: false,
+          apiKey: 'YOUR_SOLVEX_KEY',
+          proxy: {type:'http', address:'YOUR_PROXY_HOST', port:8080, login:'', password:''}
+        });
+
+        Guest mode only (no account selected), once per run. Fill in your own details and real birthday. Read Roblox's terms/privacy policy before setting acceptTerms to true. The Examples button includes this script. It does not run until you choose Run.
+
+        This native helper submits one signup through your proxy, detects a signup CAPTCHA, requests at most one Solvex solution, submits Roblox's challenge continuation and retries signup with the accepted proof. It uses the solver's returned user agent and the same proxy. CapSolver is not used for this FunCaptcha flow. Unsupported challenges, rejection, and rate limits stop the attempt.
+
+        Only after Roblox returns a successful user ID, session cookie, and matching authenticated identity does it save the password/cookie using your active vault protection. The promise resolves after saving, with success, saved, userId, and username only. The cookie is never returned to JavaScript. No extra ram.addAccount call is needed.
+
+        A network error or Stop cannot undo a signup already received by Roblox. Check the username before retrying an uncertain result. If creation succeeds but vault saving fails, sign in through Add account to save it. Do not loop the example. Tested with simulated responses; live signup has not been verified. Roblox/provider changes may require an update.
+
         Official provider documentation:
         https://solvex.run/docs
         https://docs.capsolver.com/en/guide/api-tasktype/
@@ -152,6 +169,6 @@ public sealed class BrowserCodeHelpWindow : Window
 
         Your code runs with the selected Roblox website session's permissions. It can perform account actions and browser requests. Only run code you trust. Already-sent requests cannot be undone by Stop.
 
-        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver and account-save requests use a bounded polling channel to the fixed official API hosts. Never paste Roblox passwords/cookies or unrelated private data into scripts.
+        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver, signup, and account-save requests use a bounded polling channel to the fixed official API hosts. Only supply the new signup password or addAccount password when explicitly needed; scripts and the page can see supplied secrets. Never include existing session cookies or unrelated private data.
         """;
 }

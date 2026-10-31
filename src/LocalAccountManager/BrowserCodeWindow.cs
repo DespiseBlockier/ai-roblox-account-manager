@@ -28,9 +28,8 @@ public sealed class BrowserCodeWindow : Window
         FontFamily = new FontFamily("Consolas"), FontSize = 12, IsUndoEnabled = false
     };
     private readonly CheckBox confirmGroup = new() { Content = "Confirm actual membership in this group before advancing" };
-    private readonly TabControl pages = new() { Name = "BrowserCodeTabs" };
-    private readonly ListBox examples = new() { Name = "ExampleList", DisplayMemberPath = "Name" };
-    private readonly Button useExample = new() { Name = "UseExample", Content = "Use example" };
+    private BrowserCodeHelpWindow? docs;
+    private BrowserCodeExamplesWindow? examplesWindow;
     private readonly Button start = new() { Name = "StartCodeRun", Content = "Run on selected accounts" };
     private readonly Button stop = new() { Content = "Stop queue", IsEnabled = false };
     private readonly DataGrid results = new() { RowHeight = 42, SelectionMode = DataGridSelectionMode.Single };
@@ -67,6 +66,28 @@ public sealed class BrowserCodeWindow : Window
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var header = new StackPanel();
         var titleLine = new DockPanel();
+        var help = new Button { Name = "JavaScriptDocsButton", Content = "JS docs", Margin = new Thickness(6, 0, 0, 0) };
+        var showExamples = new Button { Name = "JavaScriptExamplesButton", Content = "Examples", Margin = new Thickness(6, 0, 0, 0) };
+        help.Click += (_, _) =>
+        {
+            if (docs is not null) { docs.Activate(); return; }
+            docs = new BrowserCodeHelpWindow(this); docs.Closed += (_, _) => docs = null; docs.Show();
+        };
+        showExamples.Click += (_, _) =>
+        {
+            if (examplesWindow is not null) { examplesWindow.Activate(); return; }
+            examplesWindow = new BrowserCodeExamplesWindow(this, rows[0].IsGuest, () => IsRunning, example =>
+            {
+                if (IsRunning) return;
+                code.Text = example.Code; groupExampleLoaded = example.Group; confirmGroup.IsChecked = example.Group;
+                if (example.Group) group.Clear();
+                feedback.Text = "Example copied into the editor. Review its settings before running; nothing has run yet.";
+                Activate(); code.Focus();
+            });
+            examplesWindow.Closed += (_, _) => examplesWindow = null; examplesWindow.Show();
+        };
+        var helpButtons = new StackPanel { Orientation = Orientation.Horizontal }; helpButtons.Children.Add(help); helpButtons.Children.Add(showExamples);
+        DockPanel.SetDock(helpButtons, Dock.Right); titleLine.Children.Add(helpButtons);
         titleLine.Children.Add(new TextBlock { Text = accounts.Count == 0 ? "JavaScript · Guest browser" : "JavaScript · " + accounts.Count + " selected account(s)", FontSize = 22, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         header.Children.Add(titleLine);
         header.Children.Add(new TextBlock { Text = "ram.done() closes the current browser and advances. ram.stop() closes it and stops the queue. Closing a browser also stops the queue.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 10) });
@@ -75,37 +96,11 @@ public sealed class BrowserCodeWindow : Window
         time.Children.Add(new TextBlock { Text = "Timeout per account (minutes)  ", VerticalAlignment = VerticalAlignment.Center }); time.Children.Add(minutes);
         time.Children.Add(new TextBlock { Text = "  Run only code you trust.", VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap }); header.Children.Add(time);
         root.Children.Add(header);
-        var codePage = new TabItem { Name = "CodeTab", Header = "Code" };
-        var docsPage = new TabItem { Name = "DocsTab", Header = "Docs" };
-        var examplesPage = new TabItem { Name = "ExamplesTab", Header = "Examples" };
-        var editor = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var editor = new DockPanel { Margin = new Thickness(0, 8, 0, 12) };
         var verification = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-        verification.Children.Add(confirmGroup);
-        verification.Children.Add(new TextBlock { Text = "Group/community ID or link · optional membership confirmation", Margin = new Thickness(0, 0, 0, 5) });
-        verification.Children.Add(group); DockPanel.SetDock(verification, Dock.Bottom); editor.Children.Add(verification); editor.Children.Add(code); codePage.Content = editor;
-        docsPage.Content = new TextBox { Name = "JavaScriptDocs", Text = BrowserCodeHelpWindow.Reference, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new FontFamily("Consolas"), FontSize = 12, Margin = new Thickness(0, 8, 0, 0) };
-        var library = new Grid { Margin = new Thickness(0, 8, 0, 0) }; library.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) }); library.ColumnDefinitions.Add(new ColumnDefinition());
-        examples.ItemsSource = BrowserCodeExamples.All; examples.Margin = new Thickness(0, 0, 12, 0); library.Children.Add(examples);
-        var detail = new DockPanel(); Grid.SetColumn(detail, 1); library.Children.Add(detail);
-        var description = new TextBlock { Name = "ExampleDescription", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) }; DockPanel.SetDock(description, Dock.Top); detail.Children.Add(description);
-        useExample.Style = (Style)FindResource("Primary"); useExample.Margin = new Thickness(0, 10, 0, 0); useExample.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(useExample, Dock.Bottom); detail.Children.Add(useExample);
-        var preview = new TextBox { Name = "ExamplePreview", IsReadOnly = true, AcceptsReturn = true, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new FontFamily("Consolas"), FontSize = 12 }; detail.Children.Add(preview);
-        examples.SelectionChanged += (_, _) =>
-        {
-            if (examples.SelectedItem is not BrowserCodeExample example) return;
-            description.Text = example.Description + (rows[0].IsGuest && example.RequiresAccount ? " Select a saved account to use this example." : example.GuestOnly && !rows[0].IsGuest ? " Open the editor with no account selected to use a guest browser." : "");
-            preview.Text = example.Code; useExample.IsEnabled = !IsRunning && (!example.RequiresAccount || !rows[0].IsGuest) && (!example.GuestOnly || rows[0].IsGuest);
-        };
-        useExample.Click += (_, _) =>
-        {
-            if (IsRunning || examples.SelectedItem is not BrowserCodeExample example || (example.RequiresAccount && rows[0].IsGuest || example.GuestOnly && !rows[0].IsGuest)) return;
-            code.Text = example.Code; groupExampleLoaded = example.Group; confirmGroup.IsChecked = example.Group;
-            if (example.Group) group.Clear();
-            pages.SelectedItem = codePage; feedback.Text = "Example copied to Code. Review its settings before running; nothing has run yet.";
-        };
-        examples.SelectedIndex = rows[0].IsGuest ? 1 : 0;
-        examplesPage.Content = library; pages.Items.Add(codePage); pages.Items.Add(docsPage); pages.Items.Add(examplesPage); pages.SelectedIndex = 0;
-        Grid.SetRow(pages, 1); pages.Margin = new Thickness(0, 4, 0, 12); root.Children.Add(pages);
+        verification.Children.Add(confirmGroup); verification.Children.Add(new TextBlock { Text = "Group/community ID or link · optional membership confirmation", Margin = new Thickness(0, 0, 0, 5) });
+        verification.Children.Add(group); DockPanel.SetDock(verification, Dock.Bottom); editor.Children.Add(verification); editor.Children.Add(code);
+        Grid.SetRow(editor, 1); root.Children.Add(editor);
         results.Columns.Add(new DataGridTextColumn { Header = "ACCOUNT", Binding = new Binding("Username"), Width = 160 });
         results.Columns.Add(new DataGridTextColumn { Header = "RESULT", Binding = new Binding("Result"), Width = 100 });
         results.Columns.Add(new DataGridTextColumn { Header = "STATUS", Binding = new Binding("Message"), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
@@ -122,7 +117,7 @@ public sealed class BrowserCodeWindow : Window
         };
         stop.Click += (_, _) => { cancellation?.Cancel(); feedback.Text = "Stopping the current browser and queue…"; };
         Closing += (_, _) => cancellation?.Cancel();
-        Closed += (_, _) => { WasClosed = true; code.Clear(); };
+        Closed += (_, _) => { WasClosed = true; docs?.Close(); examplesWindow?.Close(); code.Clear(); };
     }
 
     private async Task Run()
@@ -176,7 +171,7 @@ public sealed class BrowserCodeWindow : Window
     {
         start.IsEnabled = url.IsEnabled = minutes.IsEnabled = enabled;
         group.IsEnabled = confirmGroup.IsEnabled = enabled && !rows[0].IsGuest;
-        useExample.IsEnabled = enabled && examples.SelectedItem is BrowserCodeExample example && (!example.RequiresAccount || !rows[0].IsGuest) && (!example.GuestOnly || rows[0].IsGuest);
+        examplesWindow?.RefreshAvailability();
         code.IsReadOnly = !enabled; stop.IsEnabled = !enabled;
     }
 }

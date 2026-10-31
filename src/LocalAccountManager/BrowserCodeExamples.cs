@@ -16,6 +16,28 @@ public static class BrowserCodeExamples
             ram.status('Saved @' + saved.username);
             ram.done();
             """),
+        new("Create account and save", "Creates one account in guest mode, solves a signup CAPTCHA with Solvex if requested, verifies the new session, and saves its password and cookie to your vault. Fill in your own details, real birthday, API key, and proxy. Solvex may charge. Unsupported verification stops the run. Tested with simulated responses; live signup has not been verified.", """
+            // Open this editor with NO account selected.
+            // Read https://en.help.roblox.com/hc/en-us/articles/115004647846
+            // and https://en.help.roblox.com/hc/en-us/articles/115004630823 first.
+            const options = {
+              username: 'YOUR_USERNAME',
+              password: 'YOUR_PASSWORD',
+              birthday: 'YYYY-MM-DD', // Your real birthday.
+              acceptTerms: false, // Set true only after reading and accepting Roblox's terms.
+              apiKey: 'YOUR_SOLVEX_KEY',
+              proxy: {
+                type: 'http', address: 'YOUR_PROXY_HOST', port: 8080,
+                login: '', password: '' // Optional proxy authentication.
+              }
+            };
+            ram.status('Creating one account…');
+            // Includes CAPTCHA detection, solution submission, session verification,
+            // and vault save. Do not loop: check a failed/uncertain signup before retrying.
+            const saved = await ram.createAccount(options);
+            ram.status('Created and saved @' + saved.username);
+            ram.done();
+            """, GuestOnly: true),
         new("CAPTCHA solver", "Fill in your own Solvex key and proxy. Requests at most one solution. A returned token is not automatically submitted to Roblox; this is not a complete signup script.", """
             const apiKey = 'YOUR_SOLVEX_KEY';
             const proxy = {proxyType:'http', proxyAddress:'YOUR_PROXY_HOST', proxyPort:8080};
