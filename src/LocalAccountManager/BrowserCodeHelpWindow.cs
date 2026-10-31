@@ -120,7 +120,7 @@ public sealed class BrowserCodeHelpWindow : Window
         • Providers may charge for submitted tasks. Registration is local; status calls the provider balance endpoint. Provider billing is outside the manager's control.
         • API keys and proxy credentials exist in your running script. Only use scripts/pages you trust. The editor clears on close. The app does not save solver keys, send saved Roblox passwords/cookies, follow solver redirects, or accept custom API hosts/callback URLs.
 
-        CREATE ONE ACCOUNT AND SAVE IT
+        CREATE ACCOUNTS IN THE VISIBLE BROWSER
 
         const saved = await ram.createAccount({
           provider: '2captcha', // '2captcha', 'anticaptcha', or 'solvex'
@@ -130,15 +130,19 @@ public sealed class BrowserCodeHelpWindow : Window
           proxy: null // Required proxy object for Solvex; optional for the other two.
         });
 
-        Guest mode only (no account selected), once per run. Fill in your own details and real birthday. Read Roblox's terms/privacy policy before setting acceptTerms to true. The Examples button includes this script. It does not run until you choose Run.
+        Guest mode only (no account selected). Await each signup before starting another. Fill in your own details and real birthday. Read Roblox's terms/privacy policy before setting acceptTerms to true. The Examples button includes this script. It does not run until you choose Run.
 
         Choose the provider explicitly; an omitted provider preserves the old Solvex behavior. No provider fallback is made. With proxy:null, 2Captcha and Anti-Captcha use their own solver connections while Roblox signup uses your normal connection. With a proxy object, Roblox and the solver use that same proxy. Solvex requires your proxy. Proxyless results may still be rejected by Roblox.
 
-        The helper detects the signup CAPTCHA, requests one solution from the chosen provider, submits Roblox's challenge continuation, then retries signup with the proof. It uses the provider's returned user agent when available; 2Captcha can retain the explicitly supplied browser user agent. Unsupported challenges, rejection, and rate limits stop the attempt.
+        The helper opens a fresh private browser session for each account, fills Roblox's visible signup form, and clicks Sign Up once. Roblox's own page handles its verification protocol, including captchav2. Complete any verification shown in that window. When a readable Arkose callback and blob are available, the app requests at most one provider solution and passes it to that same page callback. A rejected/unsupported result stays open for manual completion; it never starts another paid task automatically.
 
-        Only after Roblox returns a successful user ID, session cookie, and matching authenticated identity does it save the password/cookie using your active vault protection. The promise resolves after saving, with success, saved, userId, and username only. The cookie is never returned to JavaScript. No extra ram.addAccount call is needed.
+        Only an authenticated cookie from that visible browser, independently verified as your expected username, can save the password/cookie using your active vault protection. The promise resolves after saving, with success, saved, userId, and username only. The cookie is never returned to JavaScript. No extra ram.addAccount call is needed. The app never sends a separate native registration request.
 
-        A network error or Stop cannot undo a signup already received by Roblox. Check the username before retrying an uncertain result. If creation succeeds but vault saving fails, sign in through Add account to save it. Do not loop the example. Tested with simulated responses; live signup has not been verified. Roblox/provider changes may require an update.
+        Multiple accounts are supported sequentially. Open Examples → Create 3 accounts, or put await ram.createAccount(options) inside your existing loop. Each success is saved before the next begins. Concurrent requests are rejected. A failed signup, Stop, close, or timeout stops the run; do not catch an error and blindly retry it. Choose enough editor timeout for all signups and any manual verification.
+
+        Your script waits in its original document while the visible signup view navigates. After creation, use the returned identity for status/loops; DOM operations still refer to the original document. To automate the new account's page, finish this run and select the saved account for a new browser-code run.
+
+        A network error or Stop cannot undo a signup already received by Roblox. Check the username before retrying an uncertain result. If creation succeeds but vault saving fails, sign in through Add account to save it. The browser flow is tested with synthetic accounts and provider responses. Live Roblox/provider acceptance is not guaranteed.
 
         Official provider documentation:
         https://solvex.run/docs
@@ -165,7 +169,7 @@ public sealed class BrowserCodeHelpWindow : Window
 
         • Returning from your script alone does not advance. Call ram.done() explicitly.
         • ram.stop(), the Stop queue button, a script error, timeout, or closing the browser stops the queue.
-        • Navigating to a new document stops the run. The app does not automatically replay your script after navigation.
+        • Ordinary script navigation to a new document stops the run. The createAccount helper manages its own separate visible view. The app does not automatically replay your script after navigation.
         • Set the timeout per account in the editor (1–120 minutes).
         • The bulk sign-in Skip account button belongs to login queues, not JavaScript queues.
 
@@ -177,6 +181,6 @@ public sealed class BrowserCodeHelpWindow : Window
 
         Your code runs with the selected Roblox website session's permissions. It can perform account actions and browser requests. Only run code you trust. Already-sent requests cannot be undone by Stop.
 
-        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver, signup, and account-save requests use a bounded polling channel to the fixed official API hosts. Only supply the new signup password or addAccount password when explicitly needed; scripts and the page can see supplied secrets. Never include existing session cookies or unrelated private data.
+        ram contains identity and queue helpers, not your saved password or session cookie. Native host objects and general web-message bridges remain disabled. Explicit solver, signup, and account-save requests use a bounded polling channel. Solver calls use fixed provider hosts; signup is submitted by the visible Roblox page. Only supply the new signup password or addAccount password when explicitly needed; scripts and the page can see supplied secrets. Never include existing session cookies or unrelated private data.
         """;
 }

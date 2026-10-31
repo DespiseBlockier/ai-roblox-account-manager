@@ -17,12 +17,13 @@ public sealed partial class AccountBrowser
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token, closedCancellation.Token);
         CancellationToken token = linked.Token;
         string key = BrowserCodeRuntime.NewKey();
-        using var solvers = new BrowserSolverClient();
+        using var solvers = solverFactory();
         var solverJobs = new List<Task>();
         var solverIds = new HashSet<int>();
         Task? accountSave = null;
         Task? signupJob = null;
-        bool signupUsed = false;
+        bool signupFailed = false;
+        var signupIds = new HashSet<int>();
         var accountRequestIds = new HashSet<int>();
         async Task AddCurrentAccount(AddAccountRequest call)
         {
@@ -55,15 +56,10 @@ public sealed partial class AccountBrowser
                 if (!IsGuest) throw new UserError("Open the editor with no account selected to create an account.");
                 call.Validate();
                 if (onAddAccount is null) throw new UserError("This browser is not connected to an account manager.");
-                var signup = new BrowserSignupClient(solvers.Execute);
-                reply = await signup.CreateAndSave(call, web.CoreWebView2.Settings.UserAgent, async (identity, cookie, password, cancel) =>
-                {
-                    var saved = await onAddAccount(identity, cookie, password, cancel);
-                    AccountAdded?.Invoke(saved); return saved;
-                }, message => { if (!disposed && !token.IsCancellationRequested) { status.Text = message; progress(message); } }, token);
+                reply = await CreateAccountInBrowser(call, solvers, message => { if (!disposed && !token.IsCancellationRequested) { status.Text = message; progress(message); } }, token);
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception ex) { reply = new { success = false, error = Security.Friendly(ex) }; }
+            catch (Exception ex) { signupFailed = true; reply = new { success = false, error = Security.Friendly(ex) }; }
             finally { call.ClearSecrets(); }
             if (!disposed && !token.IsCancellationRequested)
                 try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplySignup(key, call.Id, reply)); } catch { }
@@ -109,13 +105,13 @@ public sealed partial class AccountBrowser
                 if (state.Accounts is { Count: > 0 } additions)
                 {
                     var call = additions[0];
-                    if (signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
+                    if (signupActive || signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !accountRequestIds.Add(call.Id)) throw new UserError("Invalid concurrent account save.");
                     accountSave = AddCurrentAccount(call);
                 }
                 if (state.Signups is { Count: > 0 } signups)
                 {
-                    if (signupUsed || accountSave is { IsCompleted: false }) throw new UserError("Only one signup is allowed per run; wait for any account save to finish.");
-                    signupUsed = true; signupJob = CreateAccount(signups[0]);
+                    if (signupFailed || signupJob is { IsCompleted: false } || accountSave is { IsCompleted: false } || !signupIds.Add(signups[0].Id)) throw new UserError("Signups must run sequentially and stop after a failed attempt.");
+                    signupJob = CreateAccount(signups[0]);
                 }
                 solverJobs.RemoveAll(job => job.IsCompleted);
                 if (state.Requests is { Count: > 0 } calls)
@@ -126,7 +122,7 @@ public sealed partial class AccountBrowser
                         solverJobs.Add(Solve(call));
                     }
                 }
-                if (state.Phase != "done" || request.ConfirmGroupId is null) Report(state.Message);
+                if (!signupActive && (state.Phase != "done" || request.ConfirmGroupId is null)) Report(state.Message);
                 if (state.Phase == "stopped") return new(BrowserCodeOutcome.Stopped, state.Message);
                 if (state.Phase == "failed") return new(BrowserCodeOutcome.Failed, state.Message);
                 if (state.Phase == "done" && DateTimeOffset.UtcNow >= nextMembershipCheck)
@@ -159,6 +155,7 @@ public sealed partial class AccountBrowser
         {
             linked.Cancel();
             try { await Task.WhenAll(solverJobs.Concat(new[] { accountSave, signupJob }.OfType<Task>())).WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+            signupActive = signupControlsBrowser = false;
             IsCodeRunning = false;
             if (!disposed)
             {

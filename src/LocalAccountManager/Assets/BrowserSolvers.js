@@ -2,14 +2,15 @@
 const solverOutbox = [], solverPending = new Map();
 const accountOutbox = [], accountPending = new Map();
 const signupOutbox = [], signupPending = new Map();
-let signupUsed = false;
+let signupSequence = 0, signupFailed = false;
 const requestCreateAccount = options => new Promise((resolve, reject) => {
   if (abort.signal.aborted) { reject(new Error('Stopped')); return; }
   if (identity !== null) { reject(new Error('Open a guest browser with no account selected to create an account.')); return; }
-  if (signupUsed) { reject(new Error('Only one signup is allowed per run.')); return; }
+  if (signupFailed) { reject(new Error('A signup failed. Stop this run and check its outcome before trying again.')); return; }
+  if (signupPending.size) { reject(new Error('Wait for the current signup to finish before creating another account.')); return; }
   if (!options || typeof options !== 'object' || JSON.stringify(options).length > 12000) { reject(new Error('Invalid signup options.')); return; }
-  const copy = JSON.parse(JSON.stringify(options)); copy.id = 1;
-  signupUsed = true; signupPending.set(1, {resolve, reject}); signupOutbox.push(copy);
+  const copy = JSON.parse(JSON.stringify(options)); copy.id = ++signupSequence;
+  signupPending.set(copy.id, {resolve, reject}); signupOutbox.push(copy);
 });
 let accountSequence = 0;
 const requestAddAccount = password => new Promise((resolve, reject) => {

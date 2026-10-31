@@ -10,7 +10,7 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.11.1</Version>
+    <Version>1.12.0</Version>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishSingleFile>true</PublishSingleFile>
@@ -26,6 +26,7 @@
     <EmbeddedResource Include="../../examples/join-group.js" LogicalName="LocalAccountManager.JoinGroup.js" />
     <EmbeddedResource Include="Assets/UpdatePublicKey.bin" LogicalName="LocalAccountManager.UpdatePublicKey" />
     <EmbeddedResource Include="Assets/BrowserSolvers.js" LogicalName="LocalAccountManager.BrowserSolvers.js" />
+    <EmbeddedResource Include="Assets/BrowserSignup.js" LogicalName="LocalAccountManager.BrowserSignup.js" />
     <Resource Include="Assets/AppIcon.ico" />
   </ItemGroup>
 </Project>

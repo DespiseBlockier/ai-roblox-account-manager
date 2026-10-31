@@ -87,7 +87,7 @@ public static class BrowserCodeRuntime
               Object.defineProperty(window, key, {configurable:true, enumerable:false, value:Object.freeze({
                 snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4), accounts:accountOutbox.splice(0,1), signups:signupOutbox.splice(0,1)}),
                 reply: (id, result) => { const call = solverPending.get(id); if (call) { solverPending.delete(id); call.resolve(result); } },
-                replySignup: (id, result) => { const call = signupPending.get(id); if (call) { signupPending.delete(id); result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not create the account.')); } },
+                replySignup: (id, result) => { const call = signupPending.get(id); if (call) { signupPending.delete(id); if (!result.success) signupFailed = true; result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not create the account.')); } },
                 replyAccount: (id, result) => { const call = accountPending.get(id); if (call) { accountPending.delete(id); result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not save the current account.')); } },
                 stop: () => { abort.abort(); finish('stopped', 'Stopped'); }
               })});
@@ -120,8 +120,8 @@ public static class BrowserCodeRuntime
     }
     public static string ReplySignup(string key, int id, object response)
     {
-        if (id != 1) throw new UserError("Invalid signup identifier.");
-        return "window[" + Key(key) + "]?.replySignup(1," + JsonSerializer.Serialize(response) + ");";
+        if (id < 1) throw new UserError("Invalid signup identifier.");
+        return "window[" + Key(key) + "]?.replySignup(" + id.ToString(CultureInfo.InvariantCulture) + "," + JsonSerializer.Serialize(response) + ");";
     }
     public static BrowserCodeState Parse(string json)
     {
@@ -153,7 +153,7 @@ public static class BrowserCodeRuntime
             {
                 if (registrations.ValueKind != JsonValueKind.Array || registrations.GetArrayLength() > 1 || registrations.GetRawText().Length > 12000) throw new UserError("Only one signup can run at a time.");
                 signups = JsonSerializer.Deserialize<List<SignupRequest>>(registrations.GetRawText(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                foreach (var signup in signups ?? []) { if (signup is null || signup.Id != 1) throw new UserError("Invalid signup request."); }
+                foreach (var signup in signups ?? []) { if (signup is null || signup.Id < 1) throw new UserError("Invalid signup request."); }
             }
             return new(phase, message, requests, accounts, signups);
         }

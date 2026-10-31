@@ -149,6 +149,12 @@ public sealed partial class AccountBrowser : Window
     private readonly RobloxApi api;
     private readonly Func<Account, RobloxIdentity, string, bool, Task> onIdentity;
     private readonly WebView2 web = new();
+    private readonly Grid browserSurface = new();
+    private WebView2? signupWeb;
+    private bool signupActive;
+    private bool signupControlsBrowser;
+    private Action<CoreWebView2>? signupReady = null; // Native-only fixture injection, before any navigation.
+    private Func<BrowserSolverClient> solverFactory = () => new BrowserSolverClient();
     private readonly TextBlock address = new() { Text = "Loading browser…", VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock status = new() { Text = "Sign in on Roblox, then click Connect account. Complete 2-step verification on Roblox if requested.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 10, 14, 10) };
     private readonly TaskCompletionSource ready = new();
@@ -198,7 +204,7 @@ public sealed partial class AccountBrowser : Window
         top.Children.Add(address);
         DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status);
-        root.Children.Add(web); Content = root;
+        browserSurface.Children.Add(web); root.Children.Add(browserSurface); Content = root;
         loginTimer.Tick += async (_, _) =>
         {
             if (ticking || disposed || !loginMode) return;
@@ -207,7 +213,7 @@ public sealed partial class AccountBrowser : Window
             catch (Exception ex) { if (!disposed) status.Text = Security.Friendly(ex); }
             finally { ticking = false; }
         };
-        Closed += (_, _) => { disposed = true; closedCancellation.Cancel(); loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop(); loginComplete.TrySetResult(LoginOutcome.Stopped); web.Dispose(); };
+        Closed += (_, _) => { disposed = true; closedCancellation.Cancel(); loginMode = false; login = null; lastAttemptedCookie = null; loginTimer.Stop(); loginComplete.TrySetResult(LoginOutcome.Stopped); signupWeb?.Dispose(); signupWeb = null; web.Dispose(); };
     }
 
     public async Task Initialize()
@@ -231,6 +237,7 @@ public sealed partial class AccountBrowser : Window
             core.ServerCertificateErrorDetected += (_, args) => args.Action = CoreWebView2ServerCertificateErrorAction.Cancel;
             core.NavigationStarting += (_, args) =>
             {
+                if (signupControlsBrowser) { args.Cancel = true; return; }
                 // Let the external-scheme event validate origin and perform the only allowed handoff.
                 if (args.Uri.StartsWith("roblox-player:", StringComparison.OrdinalIgnoreCase) && Security.IsBrowserPage(core.Source)) return;
                 if (!Security.IsBrowserPage(args.Uri) && args.Uri != "about:blank")
@@ -249,7 +256,7 @@ public sealed partial class AccountBrowser : Window
                 try { Security.LaunchRoblox(args.Uri); status.Text = "Launch request sent to the installed Roblox player."; }
                 catch (Exception ex) { status.Text = Security.Friendly(ex); }
             };
-            core.SourceChanged += (_, _) => address.Text = core.Source;
+            core.SourceChanged += (_, _) => { if (signupWeb is null) address.Text = core.Source; };
             core.WindowCloseRequested += (_, _) => Close();
             core.NavigationCompleted += async (_, args) =>
             {
@@ -263,7 +270,7 @@ public sealed partial class AccountBrowser : Window
 
     public void Navigate(string url)
     {
-        if (!disposed && web.CoreWebView2 is not null && Security.IsBrowserPage(url)) web.CoreWebView2.Navigate(url);
+        if (!disposed && Security.IsBrowserPage(url)) (signupWeb?.CoreWebView2 ?? web.CoreWebView2)?.Navigate(url);
     }
 
     public void ShowForUser()
@@ -275,7 +282,7 @@ public sealed partial class AccountBrowser : Window
         // Restore after Show: a hidden helper may retain its minimized native-window state.
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
-        if (ready.Task.IsCompletedSuccessfully) web.Focus();
+        if (ready.Task.IsCompletedSuccessfully) (signupWeb ?? web).Focus();
     }
 
     public async Task<string> ReadSession()

@@ -4,7 +4,7 @@ public sealed record BrowserCodeExample(string Name, string Description, string 
 
 public static class BrowserCodeExamples
 {
-    private const string SignupDescription = "Creates one account, solves a signup FunCaptcha if requested, verifies its session, and saves the password/cookie to your vault. Fill in your own details, real birthday, and provider key; accept Roblox's terms before running. 2Captcha and Anti-Captcha default to proxyless mode; Solvex needs your proxy. Provider charges may apply. Tested with simulated responses; live signup has not been verified.";
+    private const string SignupDescription = "Opens Roblox's visible signup form, fills and submits it once, and saves only after that browser is signed in as the expected username. A readable FunCaptcha callback can use one provider solution; otherwise complete verification in the browser. Enter your own details, real birthday, and provider key. Provider charges may apply. Tested with browser fixtures; live signup acceptance is not guaranteed.";
     public static IReadOnlyList<BrowserCodeExample> All =>
     [
         new("Account starter", "Runs once for each selected saved account, then closes and advances.", BrowserCodeRuntime.Starter, RequiresAccount: true),
@@ -17,6 +17,7 @@ public static class BrowserCodeExamples
             ram.done();
             """),
         new("Create account and save", SignupDescription, SignupExample("2captcha"), GuestOnly: true),
+        new("Create 3 accounts", SignupDescription + " Runs three signups one after another, with separate private sessions. Stops on failure or close.", ThreeAccountExample, GuestOnly: true),
         new("2Captcha: create + save", SignupDescription, SignupExample("2captcha"), GuestOnly: true),
         new("Anti-Captcha: create + save", SignupDescription, SignupExample("anticaptcha"), GuestOnly: true),
         new("Solvex: create + save", SignupDescription, SignupExample("solvex"), GuestOnly: true),
@@ -46,12 +47,32 @@ public static class BrowserCodeExamples
         // {type:'http', address:'YOUR_PROXY_HOST', port:8080, login:'', password:''}
         // Anti-Captcha proxy mode requires a public proxy IP, not a hostname/local IP.
         ram.status('Creating one account…');
-        // Detects CAPTCHA, submits one solution, verifies identity, then saves to the vault.
+        // The visible browser handles signup. Finish any verification shown there.
+        // Saves only after the browser is signed in as the expected username.
         // No automatic retries/fallback providers. Check an uncertain result before retrying.
         const saved = await ram.createAccount(options);
         ram.status('Created and saved @' + saved.username);
         ram.done();
         """.Replace("'PROVIDER'", "'" + provider + "'").Replace("/* PROXY_VALUE */", provider == "solvex" ? "{type:'http', address:'YOUR_PROXY_HOST', port:8080, login:'', password:''}" : "null");
+
+    private static string ThreeAccountExample => SignupExample("2captcha")
+        .Replace("username: 'YOUR_USERNAME',", "username: 'YOUR_PREFIX', // 3–11 letters, numbers, or underscores.")
+        .Replace("ram.status('Creating one account…');", """
+            const accountCount = 3;
+            const prefix = options.username;
+            if (prefix.startsWith('YOUR_') || !/^[A-Za-z0-9_]{3,11}$/.test(prefix)) {
+              throw new Error('Choose a prefix of 3–11 letters, numbers, or underscores.');
+            }
+            for (let i = 0; i < accountCount; i++) {
+              options.username = prefix + '_' + crypto.randomUUID().replaceAll('-', '').slice(0, 8);
+              ram.status(`Creating account ${i + 1}/${accountCount}: ${options.username}`);
+            """)
+        .Replace("// The visible browser", "  // The visible browser")
+        .Replace("// Saves only", "  // Saves only")
+        .Replace("// No automatic retries", "  // No automatic retries")
+        .Replace("const saved = await ram.createAccount(options);", "  const saved = await ram.createAccount(options);")
+        .Replace("ram.status('Created and saved @' + saved.username);", "  ram.status('Created and saved @' + saved.username);")
+        .Replace("ram.done();", "}\nram.done();");
 
     private static string SolverExample(string helper) => """
         // FunCaptcha token example; use a create + save example for complete signup.
