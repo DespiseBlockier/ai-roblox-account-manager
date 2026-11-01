@@ -23,6 +23,13 @@ public sealed class Account
     public DateTimeOffset? EmailVerifiedAt { get; set; }
     [JsonIgnore] public string EmailLabel => EmailAddress.Length == 0 ? "Not linked" : EmailAddress + (EmailVerifiedAt is null ? " · Roblox email status not checked" : " · Last verified " + EmailVerifiedAt.Value.ToLocalTime().ToString("g"));
     public bool SessionNeedsRestore { get; set; }
+    public long? RobuxBalance { get; set; }
+    public DateTimeOffset? RobuxCheckedAt { get; set; }
+    [JsonIgnore] public string RobuxCheckStatus { get; set; } = "Not refreshed this session";
+    [JsonIgnore] public string RobuxLabel => "Robux: " + (RobuxBalance is long value ? value.ToString("N0") + (RobuxCheckStatus == "Status refreshed" ? "" : " (cached)") : "Unchecked");
+    [JsonIgnore] public string RobuxDetails => RobuxLabel + "\n" + RobuxCheckStatus +
+        (RobuxCheckedAt is { } time ? "\nLast successful check: " + time.ToLocalTime().ToString("f") : "") +
+        "\nCheck status refreshes the available Robux balance. Failed checks retain the last confirmed value.";
     public string AgeGroup { get; set; } = "Unknown";
     public bool? IsAgeChecked { get; set; }
     public DateTimeOffset? AgeGroupCheckedAt { get; set; }

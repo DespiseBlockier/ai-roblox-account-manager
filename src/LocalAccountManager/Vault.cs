@@ -253,7 +253,7 @@ public sealed partial class Vault : IDisposable
                 !Text(a.Username, 100) || !Text(a.DisplayName, 100) || !Text(a.Alias, 80) || !Text(a.Group, 80) ||
                 !Text(a.Notes, 4000) || !Text(a.SavedTarget, 4096) || !Text(a.SavedJob, 40) ||
                 !Text(a.SavedPassword, 1024) || !Text(a.SessionCookie, 20000) || a.SessionCookie.Any(c => char.IsControl(c) || c == ';') ||
-                !AgeGroups.IsValid(a.AgeGroup) || !Text(a.EmailAddress, 254)) throw new UserError("The account data is invalid.");
+                !AgeGroups.IsValid(a.AgeGroup) || !Text(a.EmailAddress, 254) || a.RobuxBalance is < 0) throw new UserError("The account data is invalid.");
             if (a.EmailAddress.Length > 0) _ = GmailAddress.Normalize(a.EmailAddress);
             if (a.GmailConnectionId is Guid mailbox && !state.Gmail.Connections.Any(c => c.Id == mailbox)) throw new UserError("An account refers to a missing Gmail connection.");
             if (a.Restriction is { } restriction && (!Text(restriction.Reason, 4000) ||

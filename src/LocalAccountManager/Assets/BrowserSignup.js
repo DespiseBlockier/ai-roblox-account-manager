@@ -40,7 +40,16 @@
       if (/not appropriate|inappropriate|not allowed/.test(text)) return {phase:'username-inappropriate'};
       if (text && username.getAttribute('aria-invalid') === 'true') return {phase:'username-rejected'};
     }
-    if (submitted) return {phase:'submitted'};
+    if (submitted) {
+      if (username?.value === values.username && button) {
+        const region = button.closest('form') || document;
+        const alerts = [...region.querySelectorAll('[role="alert"],.alert-danger,.text-error')].filter(visible);
+        const messages = alerts.map(e => (e.textContent || '').replace(/\s+/g,' ').trim());
+        if (messages.some(text => /too many (?:attempts|requests)|please (?:wait|try again) (?:a few|in)/i.test(text))) return {phase:'signup-rate-limited'};
+        if (messages.some(text => /(?:an? )?unknown error (?:has )?occurred|something went wrong|unable to (?:create|sign up)/i.test(text))) return {phase:'signup-rejected'};
+      }
+      return {phase:'submitted'};
+    }
     if (!(username instanceof HTMLInputElement) || !(password instanceof HTMLInputElement) || password.type !== 'password' ||
         !(button instanceof HTMLButtonElement) || ![username,password,month,day,year,button].every(visible)) {
       if (!entryClicked) {

@@ -122,6 +122,8 @@ public sealed partial class AccountBrowser
                     if (phase == "username-taken") throw new SignupFailure("USERNAME_TAKEN", "This username is already taken. Choose a different username.", true);
                     if (phase == "username-inappropriate") throw new SignupFailure("USERNAME_INAPPROPRIATE", "Roblox says this username is not appropriate. Choose a different username.", true);
                     if (phase == "username-rejected") throw new SignupFailure("USERNAME_REJECTED", "Roblox rejected this username in the signup form. Choose a different username.", true);
+                    if (phase == "signup-rate-limited") throw new SignupFailure("RATE_LIMITED", "Roblox reports too many signup attempts. Wait before trying again; no extra solver request was made.");
+                    if (phase == "signup-rejected") throw new SignupFailure("SIGNUP_REJECTED", "Roblox showed an unknown signup error. No signed-in account was confirmed. Check this username before another attempt; no extra solver request was made.");
                     bool justSubmitted = !submitted && phase == "submitted";
                     submitted |= phase == "submitted";
                     if (phase == "validating") Report("Waiting for Roblox to validate the signup fields…");
@@ -184,7 +186,7 @@ public sealed partial class AccountBrowser
                             try { applied = await execute(BrowserSignupScripts.Apply(key, callback, token.GetString()!)).WaitAsync(TimeSpan.FromSeconds(5), cancel) == "true"; }
                             catch (OperationCanceledException) { throw; }
                             catch { }
-                            Report(applied ? "Solution passed to Roblox's browser callback. Waiting for the browser to sign in…" : "The verification frame changed. Complete the current verification in the browser; no extra solver task will be created.");
+                            Report(applied ? "Solver returned a token; Roblox has not confirmed this signup. Complete any verification still shown in the browser." : "The verification frame changed. Complete the current verification in the browser; no extra solver task will be created.");
                         }
                         break;
                     }

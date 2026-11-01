@@ -99,12 +99,12 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
     {
         string cookie;
         try { cookie = await ReadCookieForCheck(account); }
-        catch (Exception ex) { Moderation.Failure(account, ex); AgeGroups.Failure(account, ex); throw; }
+        catch (Exception ex) { Moderation.Failure(account, ex); AgeGroups.Failure(account, ex); RobuxBalances.Failure(account, ex); throw; }
         RobloxApiError? restrictedIdentity = null;
         try { await VerifyCookie(account, cookie); }
         // Moderation can remain readable when a restriction blocks the normal identity endpoint.
         catch (RobloxApiError ex) when (ex.StatusCode is 401 or 403) { restrictedIdentity = ex; }
-        catch (Exception ex) { Moderation.Failure(account, ex); AgeGroups.Failure(account, ex); throw; }
+        catch (Exception ex) { Moderation.Failure(account, ex); AgeGroups.Failure(account, ex); RobuxBalances.Failure(account, ex); throw; }
         Exception? moderationError = null;
         try
         {
@@ -114,17 +114,23 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         catch (Exception ex)
         {
             Moderation.Failure(account, ex);
-            if (ex is RobloxApiError { StatusCode: 429 }) { AgeGroups.Failure(account, ex); throw; }
+            if (ex is RobloxApiError { StatusCode: 429 }) { AgeGroups.Failure(account, ex); RobuxBalances.Failure(account, ex); throw; }
             moderationError = ex;
         }
         // Never attach age information from a session whose identity could not be verified.
-        if (restrictedIdentity is not null) AgeGroups.Failure(account, restrictedIdentity);
+        if (restrictedIdentity is not null) { AgeGroups.Failure(account, restrictedIdentity); RobuxBalances.Failure(account, restrictedIdentity); }
         else
         {
             try { AgeGroups.Apply(account, await api.AgeGroup(cookie)); }
             catch (Exception ex)
             {
                 AgeGroups.Failure(account, ex);
+                if (ex is RobloxApiError { StatusCode: 429 }) { RobuxBalances.Failure(account, ex); throw; }
+            }
+            try { RobuxBalances.Apply(account, await api.RobuxBalance(cookie)); }
+            catch (Exception ex)
+            {
+                RobuxBalances.Failure(account, ex);
                 if (ex is RobloxApiError { StatusCode: 429 }) throw;
             }
         }

@@ -160,6 +160,12 @@ public sealed class RobloxApi : IDisposable
             message + " (HTTP " + (int)response.StatusCode + (code is int number ? ", email code " + number : "") + ")");
     }
 
+    public async Task<long> RobuxBalance(string cookie)
+    {
+        using var response = await Send(HttpMethod.Get, "https://economy.roblox.com/v1/user/currency", cookie);
+        using var json = await Json(response); return RobuxBalances.Parse(json.RootElement);
+    }
+
     public async Task<ModerationRestriction?> Restriction(string cookie)
     {
         using var response = await Send(HttpMethod.Get, "https://usermoderation.roblox.com/v1/not-approved", cookie);
