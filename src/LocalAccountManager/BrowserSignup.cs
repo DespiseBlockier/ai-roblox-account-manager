@@ -4,6 +4,13 @@ using System.Text.RegularExpressions;
 
 namespace LocalAccountManager;
 
+public sealed class SignupFailure(string code, string message, bool canContinue = false, string? providerCode = null) : UserError(message)
+{
+    public string Code { get; } = code;
+    public bool CanContinue { get; } = canContinue;
+    public string? ProviderCode { get; } = providerCode;
+}
+
 public sealed class SignupProxy
 {
     public string Type { get; set; } = "http";
@@ -23,11 +30,14 @@ public sealed class SignupRequest
     public bool AcceptTerms { get; set; }
     public string ApiKey { get; set; } = "";
     public string Provider { get; set; } = "solvex"; // Preserve existing explicitly run Solvex scripts.
+    public string? Group { get; set; }
+    public bool FailureCallback { get; set; }
     public SignupEmail? Email { get; set; }
     public SignupProxy? Proxy { get; set; }
     public override string ToString() => "SignupRequest [redacted]";
     public void Validate()
     {
+        Group = BrowserAccountStore.NormalizeGroup(Group);
         if (Username is null || !Regex.IsMatch(Username, "^[A-Za-z0-9_]{3,20}$") || Username.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter a Roblox username of 3–20 letters, numbers, or underscores.");
         BrowserAccountStore.ValidatePassword(Password);
         if (Password is null || Password.Length < 8 || Password.StartsWith("YOUR_", StringComparison.Ordinal)) throw new UserError("Enter a Roblox password of at least eight characters.");

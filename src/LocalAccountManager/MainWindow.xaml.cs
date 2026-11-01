@@ -87,13 +87,13 @@ public partial class MainWindow : Window
         return Task.CompletedTask;
     }
 
-    private async Task<Account> AddBrowserAccount(RobloxIdentity identity, string cookie, string? password, CancellationToken cancel)
+    private async Task<Account> AddBrowserAccount(RobloxIdentity identity, string cookie, string? password, string? group, CancellationToken cancel)
     {
         while (checkingSessions && !closing) await Task.Delay(100, cancel);
         cancel.ThrowIfCancellationRequested();
         if (closing || loginQueue.IsRunning || addition is { IsCompleted: false }) throw new UserError("Finish the active sign-in operation before adding this browser account.");
         SavePendingNotes();
-        var saved = BrowserAccountStore.SaveVerified(state, identity, cookie, password, () => vault.Save(state));
+        var saved = BrowserAccountStore.SaveVerified(state, identity, cookie, password, () => vault.Save(state), group);
         Refresh(); Status.Text = "Saved @" + saved.Username + " from browser code.";
         return saved;
     }

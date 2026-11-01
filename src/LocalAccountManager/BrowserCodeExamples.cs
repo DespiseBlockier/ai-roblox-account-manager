@@ -17,7 +17,7 @@ public static class BrowserCodeExamples
             ram.done();
             """),
         new("Create account and save", SignupDescription, SignupExample("2captcha"), GuestOnly: true),
-        new("Create 3 accounts", SignupDescription + " Runs three signups one after another, with separate private sessions. Stops on failure or close.", ThreeAccountExample, GuestOnly: true),
+        new("Create 3 accounts", SignupDescription + " Tries three usernames in separate private sessions. Skips handled username/CAPTCHA rejections; closing, rate limits, and uncertain results stop the run.", ThreeAccountExample, GuestOnly: true),
         new("2Captcha: create + save", SignupDescription, SignupExample("2captcha"), GuestOnly: true),
         new("Anti-Captcha: create + save", SignupDescription, SignupExample("anticaptcha"), GuestOnly: true),
         new("Solvex: create + save", SignupDescription, SignupExample("solvex"), GuestOnly: true),
@@ -67,6 +67,7 @@ public static class BrowserCodeExamples
           username: 'YOUR_USERNAME',
           password: 'YOUR_PASSWORD',
           birthday: 'YYYY-MM-DD', // Your real birthday.
+          group: 'Alts', // Manager group; does not join a Roblox community.
           acceptTerms: false,
           proxy: /* PROXY_VALUE */
         };
@@ -85,8 +86,9 @@ public static class BrowserCodeExamples
 
     private static string ThreeAccountExample => SignupExample("2captcha")
         .Replace("username: 'YOUR_USERNAME',", "username: 'YOUR_PREFIX', // 3–11 letters, numbers, or underscores.")
+        .Replace("proxy: null", "proxy: null,\n  onError(error) {\n    ram.status(`${error.canContinue ? 'Skipping' : 'Stopping'} @${error.username}: ${error.code}`);\n  }")
         .Replace("ram.status('Creating one account…');", """
-            const accountCount = 3;
+            const accountCount = 3; // Attempts, including skipped failures.
             const prefix = options.username;
             if (prefix.startsWith('YOUR_') || !/^[A-Za-z0-9_]{3,11}$/.test(prefix)) {
               throw new Error('Choose a prefix of 3–11 letters, numbers, or underscores.');
@@ -95,11 +97,9 @@ public static class BrowserCodeExamples
               options.username = prefix + '_' + crypto.randomUUID().replaceAll('-', '').slice(0, 8);
               ram.status(`Creating account ${i + 1}/${accountCount}: ${options.username}`);
             """)
-        .Replace("// The visible browser", "  // The visible browser")
-        .Replace("// Saves only", "  // Saves only")
-        .Replace("// No automatic retries", "  // No automatic retries")
-        .Replace("const saved = await ram.createAccount(options);", "  const saved = await ram.createAccount(options);")
-        .Replace("ram.status('Created and saved @' + saved.username);", "  ram.status('Created and saved @' + saved.username);")
+        .Replace("// No automatic retries/fallback providers. Check an uncertain result before retrying.", "// Handled rejections return null; uncertain results still stop the run.")
+        .Replace("const saved = await ram.createAccount(options);", "  const saved = await ram.createAccount(options);\n  if (!saved) continue;")
+        .Replace("ram.status('Created and saved @' + saved.username);", "  ram.status('Created and saved @' + saved.username + ' in ' + saved.group);")
         .Replace("ram.done();", "}\nram.done();");
 
     private static string SolverExample(string helper) => """

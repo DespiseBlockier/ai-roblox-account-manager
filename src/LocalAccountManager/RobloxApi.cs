@@ -80,11 +80,11 @@ public sealed class RobloxApi : IDisposable
             using var json = JsonDocument.Parse(buffer.ToArray());
             if (json.RootElement.ValueKind != JsonValueKind.Object || !json.RootElement.TryGetProperty("code", out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out int code) || code < 0)
                 throw new UserError("Roblox could not confirm this username. No signup was submitted.");
-            if (code == 1) throw new UserError("This username is already taken. Choose a different username.");
-            if (code == 2) throw new UserError("Roblox says this username is not appropriate. Choose a different username.");
-            if (code == 10) throw new UserError("Roblox says this username contains private information. Choose a different username.");
-            if (code == 12) throw new UserError("This username is not available. Choose a different username.");
-            if (code != 0) throw new UserError("Roblox rejected this username. Check its username rules and choose another.");
+            if (code == 1) throw new SignupFailure("USERNAME_TAKEN", "This username is already taken. Choose a different username.", true);
+            if (code == 2) throw new SignupFailure("USERNAME_INAPPROPRIATE", "Roblox says this username is not appropriate. Choose a different username.", true);
+            if (code == 10) throw new SignupFailure("USERNAME_PRIVATE_INFORMATION", "Roblox says this username contains private information. Choose a different username.", true);
+            if (code == 12) throw new SignupFailure("USERNAME_UNAVAILABLE", "This username is not available. Choose a different username.", true);
+            if (code != 0) throw new SignupFailure("USERNAME_REJECTED", "Roblox rejected this username. Check its username rules and choose another.", true);
         }
         catch (JsonException) { throw new UserError("Roblox could not confirm this username. No signup was submitted."); }
     }

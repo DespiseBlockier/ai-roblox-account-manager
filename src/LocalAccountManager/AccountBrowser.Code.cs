@@ -41,7 +41,7 @@ public sealed partial class AccountBrowser
                 if (disposed || !Security.IsBrowserPage(web.CoreWebView2.Source) || await ReadSession().WaitAsync(token) != cookie)
                     throw new UserError("The browser session changed. Try adding the current account again.");
                 if (!IsGuest && identity.Id != account.UserId) throw new UserError("This browser no longer matches its selected account. Use a guest browser to add a different account.");
-                var saved = await onAddAccount(identity, cookie, call.Password, token);
+                var saved = await onAddAccount(identity, cookie, call.Password, null, token);
                 AccountAdded?.Invoke(saved);
                 reply = new { success = true, userId = saved.UserId.ToString(System.Globalization.CultureInfo.InvariantCulture), username = saved.Username };
             }
@@ -57,12 +57,23 @@ public sealed partial class AccountBrowser
             try
             {
                 if (!IsGuest) throw new UserError("Open the editor with no account selected to create an account.");
-                call.Validate();
+                try { call.Validate(); } catch (UserError ex) { throw new SignupFailure("INVALID_OPTIONS", ex.Message); }
                 if (onAddAccount is null) throw new UserError("This browser is not connected to an account manager.");
                 reply = await CreateAccountInBrowser(call, solvers, message => { if (!disposed && !token.IsCancellationRequested) { status.Text = message; progress(message); } }, token);
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception ex) { signupFailed = true; reply = new { success = false, error = Security.Friendly(ex) }; }
+            catch (Exception ex)
+            {
+                bool canContinue = ex is SignupFailure { CanContinue: true } && call.FailureCallback;
+                signupFailed = !canContinue;
+                string code = ex is SignupFailure failure ? failure.Code : ex is RobloxApiError { StatusCode: 429 } ? "RATE_LIMITED" : "SIGNUP_FAILED";
+                reply = new { success = false, error = Security.Friendly(ex), code, canContinue, providerCode = (ex as SignupFailure)?.ProviderCode };
+                if (canContinue && signupWeb is { } failedView)
+                {
+                    signupWeb = null; failedView.Dispose(); browserSurface.Children.Remove(failedView);
+                    web.Visibility = Visibility.Visible; signupControlsBrowser = false;
+                }
+            }
             finally { signupInitializing = false; call.ClearSecrets(); }
             if (!disposed && !token.IsCancellationRequested)
                 try { await web.CoreWebView2.ExecuteScriptAsync(BrowserCodeRuntime.ReplySignup(key, call.Id, reply)); } catch { }

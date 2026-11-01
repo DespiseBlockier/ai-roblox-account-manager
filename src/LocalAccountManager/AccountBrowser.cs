@@ -8,7 +8,7 @@ using System.Windows.Threading;
 namespace LocalAccountManager;
 
 public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity,
-    Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
+    Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
 {
     private readonly Dictionary<Guid, AccountBrowser> browsers = [];
     private Task<CoreWebView2Environment>? environment;
@@ -180,11 +180,11 @@ public sealed partial class AccountBrowser : Window
     public bool IsClosed => disposed;
     public bool ShownForUser { get; private set; }
     public bool IsGuest { get; }
-    private readonly Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount;
+    private readonly Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount;
     public event Action<Account>? AccountAdded;
 
     public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity, bool guest = false,
-        Func<RobloxIdentity, string, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
+        Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
     {
         Style = (Style)FindResource(typeof(Window));
         this.account = account; this.environment = environment; this.api = api; this.onIdentity = onIdentity;

@@ -88,7 +88,7 @@ public static class BrowserCodeRuntime
               Object.defineProperty(window, key, {configurable:true, enumerable:false, value:Object.freeze({
                 snapshot: () => ({phase, message, requests:solverOutbox.splice(0,4), accounts:accountOutbox.splice(0,1), signups:signupOutbox.splice(0,1), emails:emailOutbox.splice(0,1)}),
                 reply: (id, result) => { const call = solverPending.get(id); if (call) { solverPending.delete(id); call.resolve(result); } },
-                replySignup: (id, result) => { const call = signupPending.get(id); if (call) { signupPending.delete(id); if (!result.success) signupFailed = true; result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not create the account.')); } },
+                replySignup: settleSignup,
                 replyEmail: (id, result) => { const call = emailPending.get(id); if (call) { emailPending.delete(id); result.success ? call.resolve(result.value) : call.reject(new Error(result.error || 'Email operation failed.')); } },
                 replyAccount: (id, result) => { const call = accountPending.get(id); if (call) { accountPending.delete(id); result.success ? call.resolve(result) : call.reject(new Error(result.error || 'Could not save the current account.')); } },
                 stop: () => { abort.abort(); finish('stopped', 'Stopped'); }

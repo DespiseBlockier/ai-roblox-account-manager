@@ -8,10 +8,35 @@ const requestCreateAccount = options => new Promise((resolve, reject) => {
   if (identity !== null) { reject(new Error('Open a guest browser with no account selected to create an account.')); return; }
   if (signupFailed) { reject(new Error('A signup failed. Stop this run and check its outcome before trying again.')); return; }
   if (signupPending.size) { reject(new Error('Wait for the current signup to finish before creating another account.')); return; }
-  if (!options || typeof options !== 'object' || JSON.stringify(options).length > 12000) { reject(new Error('Invalid signup options.')); return; }
+  if (!options || typeof options !== 'object' || Array.isArray(options) || JSON.stringify(options).length > 12000) { reject(new Error('Invalid signup options.')); return; }
+  if (options.onError != null && typeof options.onError !== 'function') { reject(new Error('onError must be a function.')); return; }
   const copy = JSON.parse(JSON.stringify(options)); copy.id = ++signupSequence;
-  signupPending.set(copy.id, {resolve, reject}); signupOutbox.push(copy);
+  delete copy.onError; copy.failureCallback = typeof options.onError === 'function';
+  signupPending.set(copy.id, {resolve, reject, onError:options.onError, username:String(copy.username || ''), settling:false}); signupOutbox.push(copy);
 });
+const settleSignup = async (id, result) => {
+  const call = signupPending.get(id);
+  if (!call || call.settling) return;
+  call.settling = true;
+  if (result.success) { signupPending.delete(id); call.resolve(result); return; }
+  const error = Object.assign(new Error(result.error || 'Could not create the account.'), {
+    code:result.code || 'SIGNUP_FAILED', username:call.username,
+    canContinue:result.canContinue === true, providerCode:result.providerCode || null
+  });
+  Object.freeze(error);
+  const handled = typeof call.onError === 'function';
+  signupFailed = !handled || !error.canContinue;
+  try {
+    // Keep the pending entry until an async callback finishes; reentrant signups are rejected.
+    if (handled) await call.onError(error);
+    if (abort.signal.aborted) throw new Error('Stopped');
+    signupPending.delete(id);
+    if (handled && error.canContinue) call.resolve(null);
+    else call.reject(error);
+  } catch (failure) {
+    signupFailed = true; signupPending.delete(id); call.reject(failure);
+  }
+};
 let accountSequence = 0;
 const requestAddAccount = password => new Promise((resolve, reject) => {
   if (abort.signal.aborted) { reject(new Error('Stopped')); return; }

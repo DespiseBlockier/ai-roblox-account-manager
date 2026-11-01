@@ -98,9 +98,9 @@ public sealed partial class AccountBrowser
                     if (!string.Equals(identity.Name, call.Username, StringComparison.OrdinalIgnoreCase)) throw new UserError("The browser signed in to a different username. Nothing was saved for this signup.");
                     if (await SignupCookie(core, cancel) != cookie) throw new UserError("The signup browser session changed before saving. Nothing was saved.");
                     Account saved;
-                    try { saved = await onAddAccount!(identity, cookie, call.Password, cancel); }
+                    try { saved = await onAddAccount!(identity, cookie, call.Password, call.Group, cancel); }
                     catch (OperationCanceledException) { throw; }
-                    catch { throw new UserError("The browser signed in successfully, but saving to the vault failed. Add this account through browser login before trying to create it again."); }
+                    catch { throw new SignupFailure("SAVE_FAILED", "The browser signed in successfully, but saving to the vault failed. Add this account through browser login before trying to create it again."); }
                     AccountAdded?.Invoke(saved);
                     // Preserve the explicit addAccount/fetch session if the caller continues.
                     if (!disposed && !cancel.IsCancellationRequested)
@@ -113,15 +113,15 @@ public sealed partial class AccountBrowser
                         catch (OperationCanceledException) { throw; }
                         catch (Exception ex) { emailVerified = false; emailError = GmailWindow.Friendly(ex); Report("Account created and saved. " + emailError); }
                     }
-                    return new { success = true, saved = true, userId = saved.UserId.ToString(CultureInfo.InvariantCulture), username = saved.Username, emailVerified, emailError };
+                    return new { success = true, saved = true, userId = saved.UserId.ToString(CultureInfo.InvariantCulture), username = saved.Username, group = saved.Group, emailVerified, emailError };
                 }
                 if (Security.IsBrowserPage(core.Source))
                 {
                     using var filled = JsonDocument.Parse(await core.ExecuteScriptAsync(BrowserSignupScripts.Fill(key, call)).WaitAsync(TimeSpan.FromSeconds(5), cancel));
                     string phase = filled.RootElement.ValueKind == JsonValueKind.Object && filled.RootElement.TryGetProperty("phase", out var state) ? state.GetString() ?? "" : "";
-                    if (phase == "username-taken") throw new UserError("This username is already taken. Choose a different username.");
-                    if (phase == "username-inappropriate") throw new UserError("Roblox says this username is not appropriate. Choose a different username.");
-                    if (phase == "username-rejected") throw new UserError("Roblox rejected this username in the signup form. Choose a different username.");
+                    if (phase == "username-taken") throw new SignupFailure("USERNAME_TAKEN", "This username is already taken. Choose a different username.", true);
+                    if (phase == "username-inappropriate") throw new SignupFailure("USERNAME_INAPPROPRIATE", "Roblox says this username is not appropriate. Choose a different username.", true);
+                    if (phase == "username-rejected") throw new SignupFailure("USERNAME_REJECTED", "Roblox rejected this username in the signup form. Choose a different username.", true);
                     bool justSubmitted = !submitted && phase == "submitted";
                     submitted |= phase == "submitted";
                     if (phase == "validating") Report("Waiting for Roblox to validate the signup fields…");
@@ -167,6 +167,13 @@ public sealed partial class AccountBrowser
                             !result.TryGetProperty("token", out var token) || token.ValueKind != JsonValueKind.String || token.GetString()?.Length is not (> 0 and <= 20000))
                         {
                             string code = result.TryGetProperty("errorCode", out var error) && error.ValueKind == JsonValueKind.String && error.GetString() is string name && System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Z0-9_]{1,80}$") && !name.Contains(call.ApiKey, StringComparison.OrdinalIgnoreCase) ? name : "PROVIDER_ERROR";
+                            if (call.FailureCallback)
+                            {
+                                // A user may have completed the challenge while the solver was running.
+                                if (await SignupCookie(core, cancel) is not null) break;
+                                bool unsolvable = code is "ERROR_CAPTCHA_UNSOLVABLE" or "CAPTCHA_UNSOLVABLE";
+                                throw new SignupFailure("CAPTCHA_SOLVE_FAILED", BrowserSolverClient.ProviderName(call.Provider) + ": " + code + ". No paid retry was requested.", unsolvable, code);
+                            }
                             Report(code == "ERROR_CAPTCHA_UNSOLVABLE" || code == "CAPTCHA_UNSOLVABLE"
                                 ? BrowserSolverClient.ProviderName(call.Provider) + ": " + code + ". Provider could not solve it. Click Start puzzle in the browser and finish manually, or stop. No paid retry."
                                 : BrowserSolverClient.ProviderName(call.Provider) + ": " + code + ". Finish verification in the browser or stop. No paid retry.");
