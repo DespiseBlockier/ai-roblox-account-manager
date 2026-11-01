@@ -104,11 +104,7 @@ public sealed class RobloxApi : IDisposable
     public async Task<RobloxEmailInfo> EmailInfo(string cookie)
     {
         using var response = await Send(HttpMethod.Get, "https://accountsettings.roblox.com/v1/email", cookie);
-        using var json = await Json(response); var root = json.RootElement;
-        string address = root.TryGetProperty("emailAddress", out var email) && email.ValueKind == JsonValueKind.String ? email.GetString()! : "";
-        if (address.Length > 0) address = GmailAddress.Normalize(address);
-        if (!root.TryGetProperty("verified", out var verified) || verified.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new UserError("Roblox returned an unknown email status.");
-        return new(address, verified.ValueKind == JsonValueKind.True);
+        using var json = await Json(response); return RobloxEmailInfo.Parse(json.RootElement);
     }
     public Task SetEmail(string cookie, string address, string password, CancellationToken cancel) =>
         EmailPost("https://accountsettings.roblox.com/v1/email", cookie, new { emailAddress = GmailAddress.Normalize(address), password, skipVerificationEmail = false }, cancel);
@@ -129,9 +125,39 @@ public sealed class RobloxApi : IDisposable
         {
             string csrf = values.Single();
             if (csrf.Length is < 1 or > 8192 || csrf.Any(char.IsControl)) throw new UserError("Roblox returned invalid email authorization.");
-            using var second = await Post(csrf); Check(second); return;
+            using var second = await Post(csrf); await CheckEmail(second, cancel); return;
         }
-        Check(first);
+        await CheckEmail(first, cancel);
+    }
+
+    private static async Task CheckEmail(HttpResponseMessage response, CancellationToken cancel)
+    {
+        if (response.IsSuccessStatusCode) return;
+        int? code = null;
+        try
+        {
+            using var json = await GoogleOAuth.ReadJson(response, 8192, cancel);
+            if (json.RootElement.ValueKind == JsonValueKind.Object && json.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array)
+                foreach (var error in errors.EnumerateArray().Take(1))
+                    if (error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var value) && value.TryGetInt32(out int numeric) && numeric >= 0) code = numeric;
+        }
+        catch (Exception ex) when (ex is JsonException or UserError or InvalidOperationException) { }
+        bool challenge = response.Headers.Contains("rblx-challenge-type");
+        string message = challenge ? "Roblox requires additional verification before changing email. Complete it in the account browser." :
+            (int)response.StatusCode == 401 ? "The Roblox session expired before the email change. Sign in to this account again." :
+            (int)response.StatusCode == 429 ? "Roblox has rate limited email changes or verification messages. Wait before trying again." : code switch
+            {
+                2 => "Roblox currently has email changes disabled for this account. Try again later.",
+                3 => "Roblox says too many accounts are associated with this email address. Choose another address.",
+                4 => "Roblox says this is already the account's current email address.",
+                5 => "Roblox says the account's email is already verified.",
+                8 => "Roblox rejected the saved account password when adding the email. Check the password or add the email in the browser.",
+                9 => "Roblox rejected this email address. Check its spelling and forwarding setup.",
+                10 => "Roblox says no email address has been added to this account.",
+                _ => "Roblox could not complete the email change. Check the account browser for any required steps."
+            };
+        throw new RobloxEmailError((int)response.StatusCode, code, challenge,
+            message + " (HTTP " + (int)response.StatusCode + (code is int number ? ", email code " + number : "") + ")");
     }
 
     public async Task<ModerationRestriction?> Restriction(string cookie)

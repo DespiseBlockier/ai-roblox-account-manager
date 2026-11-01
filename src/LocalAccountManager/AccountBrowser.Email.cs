@@ -129,15 +129,20 @@ public sealed partial class AccountBrowser
         void Report(string value) { if (!disposed && !cancel.IsCancellationRequested) { status.Text = value; progress(value); } }
         if (await SignupCookie(core, cancel) != cookie) throw new UserError("The browser session changed before email linking.");
         var current = await connectionApi.EmailInfo(cookie).WaitAsync(cancel);
-        if (current.Address.Equals(recipient, StringComparison.OrdinalIgnoreCase) && current.Verified) { gmail.Bind(saved, connection, recipient, true, true); return true; }
-        if (current.Address.Length > 0 && !current.Address.Equals(recipient, StringComparison.OrdinalIgnoreCase) && !replaceExisting)
+        bool wasVerified = current.Verified;
+        if (current.ExactlyMatches(recipient) && current.Verified) { gmail.Bind(saved, connection, recipient, true, true); return true; }
+        bool sameCandidate = current.CouldMatch(recipient);
+        if (current.Address.Length > 0 && !sameCandidate && !replaceExisting)
             throw new UserError("This Roblox account already has a different email. Use replaceExisting:true only if you intend to replace it.");
+        if (current.IsMasked && current.Verified && sameCandidate && !replaceExisting)
+            throw new UserError("Roblox reports an already verified email but hides its full address. The manager cannot confirm an exact match. Use the Gmail window to associate it locally without changing the Roblox email.");
         core.Navigate("https://www.roblox.com/my/account#!/info");
         DateTimeOffset started = DateTimeOffset.UtcNow;
         Report("Linking the Roblox email address to @" + identity.Name + "…");
-        if (current.Address.Equals(recipient, StringComparison.OrdinalIgnoreCase)) await connectionApi.ResendEmailVerification(cookie, cancel);
+        if (sameCandidate) await connectionApi.ResendEmailVerification(cookie, cancel);
         else await connectionApi.SetEmail(cookie, recipient, password, cancel);
         gmail.Bind(saved, connection, recipient, true);
+        core.Navigate("https://www.roblox.com/my/account#!/info"); // Refresh the page after the accepted email change.
         if (!request.Verify) return false;
         Report("Waiting for a fresh Roblox verification email for @" + identity.Name + "…");
         bool navigated = false, confirmationAttempted = false;
@@ -146,7 +151,10 @@ public sealed partial class AccountBrowser
             cancel.ThrowIfCancellationRequested();
             if (disposed || await SignupCookie(core, cancel) != cookie) throw new UserError("The verification browser session changed. The account is saved; check email verification in Roblox.");
             current = await connectionApi.EmailInfo(cookie).WaitAsync(cancel);
-            if (current.Verified && current.Address.Equals(recipient, StringComparison.OrdinalIgnoreCase))
+            // A masked address alone cannot prove which full address Roblox verified.
+            // New/unverified accounts additionally need a fresh authenticated ticket for this exact recipient.
+            if (current.Verified && (current.ExactlyMatches(recipient) ||
+                current.IsMasked && current.CouldMatch(recipient) && !wasVerified && navigated))
             { gmail.Bind(saved, connection, recipient, true, true); Report("Roblox confirmed the email is verified for @" + identity.Name + "."); return true; }
             if (!navigated)
             {
@@ -167,6 +175,6 @@ public sealed partial class AccountBrowser
             }
             await Task.Delay(5000, cancel);
         }
-        throw new UserError("The account was saved, but Roblox has not confirmed its email. Finish any steps in the verification browser.");
+        throw new UserError("The account is saved, but the manager could not confirm the requested email. Check the verification browser before trying email setup again.");
     }
 }

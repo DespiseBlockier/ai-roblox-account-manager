@@ -96,7 +96,40 @@ public static class GmailAddress
     }
 }
 
-public sealed record RobloxEmailInfo(string Address, bool Verified);
+public sealed record RobloxEmailInfo(string Address, bool Verified, bool IsMasked = false)
+{
+    public bool ExactlyMatches(string recipient) => !IsMasked && Address.Equals(recipient, StringComparison.OrdinalIgnoreCase);
+    public bool CouldMatch(string recipient)
+    {
+        if (!IsMasked) return ExactlyMatches(recipient);
+        string mask = Regex.Replace(Address, "[*•]+", "*", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+        string pattern = "^" + Regex.Escape(mask).Replace("\\*", "[^@]*") + "$";
+        return Regex.IsMatch(GmailAddress.Normalize(recipient), pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    }
+    public static RobloxEmailInfo Parse(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("verified", out var verified) || verified.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new UserError("Roblox returned an unknown email status.");
+        string address = root.TryGetProperty("emailAddress", out var email) && email.ValueKind == JsonValueKind.String ? email.GetString()! : "";
+        bool masked = address.Contains('*') || address.Contains('•');
+        if (masked)
+        {
+            if (address.Length > 254 || !Regex.IsMatch(address, @"^[A-Za-z0-9._+%*•-]+@[A-Za-z0-9.*•-]+\.[A-Za-z0-9*•-]+$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)))
+                throw new UserError("Roblox returned an unsupported masked email format. Check email verification in the browser.");
+            address = address.ToLowerInvariant();
+        }
+        else if (address.Length > 0) address = GmailAddress.Normalize(address);
+        if (address.Length == 0 && verified.ValueKind == JsonValueKind.True) throw new UserError("Roblox returned a verified email status without an address.");
+        return new(address, verified.ValueKind == JsonValueKind.True, masked);
+    }
+}
+
+public sealed class RobloxEmailError(int statusCode, int? code, bool requiresChallenge, string message) : UserError(message)
+{
+    public int StatusCode { get; } = statusCode;
+    public int? Code { get; } = code;
+    public bool RequiresChallenge { get; } = requiresChallenge;
+}
 
 public sealed class EmailRequest
 {

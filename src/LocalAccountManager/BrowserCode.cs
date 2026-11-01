@@ -60,7 +60,7 @@ public static class BrowserCodeRuntime
                   (location.port && location.port !== '443')) return null;
             """ + "\nif (" + (guest ? "false" : "true") + " && location.pathname.replace(/\\/$/, '').toLowerCase() === '/login') return null;\nconst key = " + Key(key) + ";\nconst identity = " + identity + ";\n" + """
               const abort = new AbortController();
-              let phase = 'running', message = 'Code is running.';
+              let phase = 'running', message = 'Code is running.', hasStatus = false;
               const text = value => String(value ?? '').slice(0, 2000);
               const finish = (next, value) => {
                 if (phase === 'done' || phase === 'stopped' || phase === 'failed') return;
@@ -75,7 +75,7 @@ public static class BrowserCodeRuntime
                 anticaptcha: Object.freeze({register: (key, options) => registerSolver('anticaptcha', key, options)}),
                 solvex: Object.freeze({register: (key, options) => registerSolver('solvex', key, options)}),
                 fetchcaptcha: fetchCaptcha, featchcaptcha: fetchCaptcha,
-                status: value => { if (phase === 'running' || phase === 'waiting') message = text(value); },
+                status: value => { if (phase === 'running' || phase === 'waiting') { message = text(value); hasStatus = true; } },
                 done: () => { finish('done', 'Code requested completion.'); abort.abort(); },
                 stop: value => { finish('stopped', value || 'Code stopped the queue.'); abort.abort(); },
                 sleep: ms => new Promise((resolve, reject) => {
@@ -98,7 +98,7 @@ public static class BrowserCodeRuntime
                   await (async function(ram) {
             """ + "\n" + code + "\n" + """
                   })(ram);
-                  if (phase === 'running') { phase = 'waiting'; message = 'Code returned. Call ram.done() to close this account and advance.'; }
+                  if (phase === 'running') { phase = 'waiting'; if (!hasStatus) message = 'Code returned. Call ram.done() to close this account and advance.'; }
                 } catch (error) {
                   if (!abort.signal.aborted) finish('failed', error && error.message ? error.message : 'JavaScript failed.');
                 }

@@ -50,7 +50,7 @@ public sealed class BrowserCodeHelpWindow : Window
           Example: ram.stop('This account needs manual verification');
 
         ram.status(message)
-          Show a short progress message in the manager. It does not save a note or mark the account complete.
+          Show a short progress message in the manager. If your code returns without ram.done(), this message remains visible while the browser stays open. It does not save a note or mark the account complete.
 
         await ram.sleep(milliseconds)
           Pause without blocking the page. Each pause is limited to five minutes (300000 ms). Stop or completion cancels a pending sleep.
@@ -109,7 +109,7 @@ public sealed class BrowserCodeHelpWindow : Window
           // Include the normal username/password/birthday/provider/key/options.
           email: {mailbox:'YOUR_GMAIL_ADDRESS', address:'YOUR_GMAIL_ADDRESS', verify:true}
         });
-          Open Examples → Create account + Gmail for the complete template. The Roblox account is saved BEFORE email setup. After a later email failure, saved.emailVerified is false and saved.emailError describes the remaining step. The account remains saved; do not repeat signup to fix its email. If email was not requested, emailVerified is null. Set verify:false only to add the address without waiting for verification.
+          Open Examples → Create account + Gmail for the complete template. The Roblox account is saved BEFORE email setup. After a later email failure, saved.emailVerified is false and saved.emailError describes the remaining step. The account remains saved; do not repeat signup to fix its email. Use ram.status(saved.emailError) and return to keep the remaining error visible. Rejected email changes report safe HTTP/numeric reasons, such as an invalid address, rejected account password, address account limit, or rate limit. Raw server messages and verification metadata are never displayed. With a masked API response, a previously unverified account needs a fresh authenticated verification email for the exact requested recipient and Roblox's verified flag; a masked match alone is insufficient. An already verified masked address can be associated locally without claiming an exact verification check. If email was not requested, emailVerified is null. Set verify:false only to add the address without waiting for verification.
 
           Forwarded email example:
           await ram.email.linkAndVerify({mailbox:'you@gmail.com', displayEmail:'alt@example.com'});
