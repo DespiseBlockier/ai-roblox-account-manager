@@ -60,7 +60,8 @@ public sealed partial class AccountBrowser
             bool Current() => !disposed && loginMode && ReferenceEquals(emailLoginCancel, attempt) && !cancel.IsCancellationRequested;
             try
             {
-                var connections = gmail.ForLogin(account); if (connections.Count == 0) return;
+                var connections = gmail.ForLogin(account);
+                if (connections.Count == 0) { status.Text = "Automatic email codes are disabled for this account. Enable them in Gmail connections."; return; }
                 status.Text = "Waiting for a fresh Roblox email code for @" + expected + "…";
                 DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMinutes(2);
                 while (Current() && DateTimeOffset.UtcNow < deadline)
@@ -69,7 +70,8 @@ public sealed partial class AccountBrowser
                     {
                         if (!connection.AutomaticLoginCodes || !gmail.IsConnected(connection)) continue;
                         string address = account.GmailConnectionId == connection.Id && account.EmailAddress.Length > 0 ? account.EmailAddress : connection.Address;
-                        var found = await gmail.Find(connection, expected, address, RobloxMailPurpose.LoginCode, emailLoginStarted, cancel);
+                        var found = await gmail.Find(connection, expected, address, RobloxMailPurpose.LoginCode, emailLoginStarted, cancel,
+                            message => { if (Current()) status.Text = message + " Still waiting for a fresh code for @" + expected + "…"; });
                         if (!Current() || !connection.AutomaticLoginCodes || !gmail.IsConnected(connection)) return;
                         var current = await EmailPrompt(cancel);
                         if (current.Document != prompt.Document || current.Id != prompt.Id || !current.Username.Equals(expected, StringComparison.OrdinalIgnoreCase)) return;

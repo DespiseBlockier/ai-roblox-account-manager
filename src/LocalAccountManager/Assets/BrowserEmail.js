@@ -17,7 +17,7 @@
   const prompt = () => {
     const input = document.querySelector('#two-step-verification-code-input');
     if (!(input instanceof HTMLInputElement) || !['text','tel','password'].includes(input.type) || !visible(input) || input.disabled || input.maxLength !== 6) return null;
-    const root = input.closest('[role="dialog"],.modal-content,.inline-challenge-container') || input.parentElement?.parentElement;
+    const root = input.closest('[role="dialog"],.modal-content,.inline-challenge-content,.inline-challenge-container') || input.parentElement?.parentElement;
     if (!root) return null;
     const paragraphs = [...root.querySelectorAll('p,label')].filter(visible).map(e => e.textContent).join(' ');
     if (!/code/i.test(paragraphs) || !/email|e-mail|@/i.test(paragraphs) || /authenticator|authentication app|text message|\bsms\b|recovery code|backup code|security key|passkey/i.test(paragraphs)) return null;

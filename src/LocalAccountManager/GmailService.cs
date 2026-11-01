@@ -120,24 +120,30 @@ public sealed class GmailService : IDisposable
         state.Gmail.UsedMessages = previous.Append(digest).TakeLast(256).ToList();
         try { save(); } catch { state.Gmail.UsedMessages = previous; throw; }
     }
-    public async Task<RobloxMail?> Find(GmailConnection connection, string username, string recipient, RobloxMailPurpose purpose, DateTimeOffset since, CancellationToken cancel)
+    public async Task<RobloxMail?> Find(GmailConnection connection, string username, string recipient, RobloxMailPurpose purpose, DateTimeOffset since, CancellationToken cancel, Action<string>? progress = null)
     {
         recipient = Recipient(connection, recipient);
         if (!System.Text.RegularExpressions.Regex.IsMatch(username, "^[A-Za-z0-9_]{3,20}$")) throw new UserError("A Roblox username is required to match verification mail.");
         string access = await Access(connection, cancel);
-        string sender = purpose == RobloxMailPurpose.LoginCode ? "from:no-reply@roblox.com" : "{from:email_validate@roblox.com from:no-reply@roblox.com}";
+        string sender = purpose == RobloxMailPurpose.LoginCode ? "{from:no-reply@roblox.com from:accounts@roblox.com}" : "{from:email_validate@roblox.com from:no-reply@roblox.com}";
         string query = sender + " after:" + since.ToUnixTimeSeconds() + " to:" + recipient + " \"" + username + "\"";
         using var list = await Get("messages?maxResults=10&q=" + Uri.EscapeDataString(query), access, cancel);
-        if (!list.RootElement.TryGetProperty("messages", out var messages)) return null;
+        if (!list.RootElement.TryGetProperty("messages", out var messages)) { progress?.Invoke("No new Roblox verification email was found in the connected Gmail yet."); return null; }
+        string? skipped = null;
         foreach (var item in messages.EnumerateArray().Take(10))
         {
             string? id = item.GetProperty("id").GetString();
             if (id is null || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-zA-Z0-9_-]{1,128}$")) continue;
             using var message = await Get("messages/" + id + "?format=full", access, cancel);
-            var found = RobloxMailParser.Parse(message.RootElement, username, recipient, purpose, since, now());
+            var found = RobloxMailParser.Parse(message.RootElement, username, recipient, purpose, since, now(), reason => skipped ??= reason);
             if (!IsConnected(connection)) throw new UserError("This Gmail mailbox was disconnected.");
-            if (found is not null && !state.Gmail.UsedMessages.Contains(Digest(connection, found))) return found;
+            if (found is not null)
+            {
+                if (!state.Gmail.UsedMessages.Contains(Digest(connection, found))) return found;
+                skipped ??= "This email was already used by the manager. Request a new code in Roblox.";
+            }
         }
+        progress?.Invoke(skipped ?? "No new Roblox verification email was found in the connected Gmail yet.");
         return null;
     }
     public async Task<RobloxMail> Wait(GmailConnection connection, string username, string recipient, RobloxMailPurpose purpose, DateTimeOffset since, TimeSpan timeout, CancellationToken cancel)

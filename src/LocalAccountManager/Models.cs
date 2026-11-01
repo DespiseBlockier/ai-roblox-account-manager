@@ -21,7 +21,7 @@ public sealed class Account
     public string EmailAddress { get; set; } = "";
     public bool AutoEmailCodes { get; set; }
     public DateTimeOffset? EmailVerifiedAt { get; set; }
-    [JsonIgnore] public string EmailLabel => EmailAddress.Length == 0 ? "Not linked" : EmailAddress + (EmailVerifiedAt is null ? " · Not verified by manager" : " · Last verified " + EmailVerifiedAt.Value.ToLocalTime().ToString("g"));
+    [JsonIgnore] public string EmailLabel => EmailAddress.Length == 0 ? "Not linked" : EmailAddress + (EmailVerifiedAt is null ? " · Roblox email status not checked" : " · Last verified " + EmailVerifiedAt.Value.ToLocalTime().ToString("g"));
     public bool SessionNeedsRestore { get; set; }
     public string AgeGroup { get; set; } = "Unknown";
     public bool? IsAgeChecked { get; set; }
