@@ -162,7 +162,7 @@ public sealed partial class AccountBrowser
                             if (!string.IsNullOrEmpty(chosen.Login)) task["proxyLogin"] = chosen.Login;
                             if (!string.IsNullOrEmpty(chosen.Password)) task["proxyPassword"] = chosen.Password;
                         }
-                        Report("CAPTCHA is open in the browser. Requesting one " + BrowserSolverClient.ProviderName(call.Provider) + " solution…");
+                        Report("Verification is ready and shown in the browser. Requesting one " + BrowserSolverClient.ProviderName(call.Provider) + " solution…");
                         var result = JsonSerializer.SerializeToElement(await solvers.Execute(new SolverRequest { Id = 1, Provider = call.Provider, Action = "solve", ApiKey = call.ApiKey, Task = JsonSerializer.SerializeToElement(task) }, cancel));
                         cancel.ThrowIfCancellationRequested();
                         if (!result.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.True ||
@@ -191,7 +191,7 @@ public sealed partial class AccountBrowser
                         break;
                     }
                 }
-                if (submitted && !solverAttempted) Report("Complete any verification shown in the browser. A solver is used only after Arkose reports the challenge is shown, with readable configuration.");
+                if (submitted && !solverAttempted) Report("Complete any verification shown in the browser. Waiting for Arkose to report ready and shown before sending a solver request.");
                 await Task.Delay(500, cancel);
             }
         }

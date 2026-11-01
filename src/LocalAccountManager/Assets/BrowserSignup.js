@@ -89,10 +89,18 @@
     window[callback] = function(enforcement) {
       if (enforcement && typeof enforcement.setConfig === 'function') {
         const configure = enforcement.setConfig;
+        const lifecycle = {ready:false};
         enforcement.setConfig = function(config) {
+          if (config && typeof config === 'object') {
+            const originalReady = config.onReady;
+            config = {...config, onReady:function() {
+              lifecycle.ready = true;
+              if (typeof originalReady === 'function') return originalReady.apply(this, arguments);
+            }};
+          }
           if (config && typeof config.onCompleted === 'function' && typeof config.data?.blob === 'string') {
             const configuredKey = typeof config.publicKey === 'string' && /^[a-f0-9-]{36}$/i.test(config.publicKey) ? config.publicKey : publicKey;
-            const record = {publicKey:configuredKey, blob:config.data.blob, domain:url.hostname, complete:config.onCompleted.bind(config), applied:false, completed:false, shown:false, failed:false};
+            const record = {publicKey:configuredKey, blob:config.data.blob, domain:url.hostname, lifecycle, complete:config.onCompleted.bind(config), applied:false, completed:false, shown:false, failed:false};
             if (captures.length < 8) captures.push(record);
             const wrap = (name, update) => {
               const original = config[name];
@@ -116,14 +124,14 @@
   const scan = () => document.querySelectorAll('script[data-callback][src]').forEach(inspect);
   const observer = new MutationObserver(scan); observer.observe(document, {childList:true, subtree:true}); scan();
   const challenge = () => {
-    scan(); const index = captures.findIndex(c => c.shown && !c.failed && !c.applied && !c.completed);
+    scan(); const index = captures.findIndex(c => c.lifecycle.ready && c.shown && !c.failed && !c.applied && !c.completed);
     if (index < 0) return null;
     const value = captures[index];
     return {index, websitePublicKey:value.publicKey, blob:value.blob, funcaptchaApiJSSubdomain:value.domain};
   };
   const apply = (index, token) => {
     const value = captures[index];
-    if (!value || !value.shown || value.failed || value.applied || value.completed || typeof token !== 'string' || !token.length || token.length > 20000) return false;
+    if (!value || !value.lifecycle.ready || !value.shown || value.failed || value.applied || value.completed || typeof token !== 'string' || !token.length || token.length > 20000) return false;
     value.applied = true; value.complete({token}); return true;
   };
   Object.defineProperty(window, key, {value:Object.freeze({fill, challenge, apply}), configurable:true, enumerable:false});
