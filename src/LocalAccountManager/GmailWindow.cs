@@ -63,7 +63,8 @@ public sealed class GmailWindow : Window
         connections.SelectionChanged += (_, _) => { auto.IsEnabled = !busy && connections.SelectedItem is GmailConnection; auto.IsChecked = (connections.SelectedItem as GmailConnection)?.AutomaticLoginCodes == true; };
         panel.Children.Add(new TextBlock { Text = "Local account association · " + selected.Count + " selected", FontSize = 17, Margin = new Thickness(0, 18, 0, 7) });
         panel.Children.Add(new TextBlock { Text = "This associates accounts in the manager. It does not change their email on Roblox. Use the JS email verification example to add and verify an email on Roblox.", TextWrapping = TextWrapping.Wrap });
-        var address = new TextBox { Name = "AccountEmailAddress", MaxLength = 254, Text = selected.Count == 1 ? selected[0].EmailAddress : "", Margin = new Thickness(0, 8, 0, 5), ToolTip = "Connected Gmail address or a plus alias; blank uses the selected mailbox." }; panel.Children.Add(address);
+        panel.Children.Add(new TextBlock { Text = "Email used on Roblox · may forward to the selected Gmail inbox", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        var address = new TextBox { Name = "AccountEmailAddress", MaxLength = 254, Text = selected.Count == 1 ? selected[0].EmailAddress : "", Margin = new Thickness(0, 8, 0, 5), ToolTip = "Email address used on Roblox, including a custom-domain forwarding address. Codes are read from the selected connected Gmail inbox. Blank uses that inbox's address." }; panel.Children.Add(address);
         var association = new StackPanel { Orientation = Orientation.Horizontal };
         var assign = new Button { Name = "AssignGmail", Content = "Associate selected accounts", IsEnabled = selected.Count > 0 };
         var clear = new Button { Content = "Clear local association", IsEnabled = selected.Count > 0 }; association.Children.Add(assign); association.Children.Add(clear); panel.Children.Add(association);

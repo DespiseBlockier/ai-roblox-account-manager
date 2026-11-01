@@ -134,7 +134,7 @@ public sealed partial class AccountBrowser
             throw new UserError("This Roblox account already has a different email. Use replaceExisting:true only if you intend to replace it.");
         core.Navigate("https://www.roblox.com/my/account#!/info");
         DateTimeOffset started = DateTimeOffset.UtcNow;
-        Report("Linking the connected Gmail address to @" + identity.Name + "…");
+        Report("Linking the Roblox email address to @" + identity.Name + "…");
         if (current.Address.Equals(recipient, StringComparison.OrdinalIgnoreCase)) await connectionApi.ResendEmailVerification(cookie, cancel);
         else await connectionApi.SetEmail(cookie, recipient, password, cancel);
         gmail.Bind(saved, connection, recipient, true);

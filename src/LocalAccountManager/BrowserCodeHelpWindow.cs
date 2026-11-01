@@ -90,7 +90,7 @@ public sealed class BrowserCodeHelpWindow : Window
         const message = await ram.email.waitForCode({
           mailbox: 'YOUR_GMAIL_ADDRESS', // Connected address or mailbox ID.
           username: ram.account?.username || 'YOUR_ROBLOX_USERNAME',
-          address: 'YOUR_GMAIL_ADDRESS', // Optional; may be a plus alias of that mailbox.
+          displayEmail: 'alt@example.com', // Optional address used on Roblox; forwards to mailbox.
           timeoutSeconds: 120 // 1–300 seconds.
         });
           Returns {code, receivedAt}. Trigger the email 2FA challenge before waiting. Mail must be newer than this code run and match this account, an observed login in this browser, or a saved Gmail-associated account. Sender authentication, recipient, username greeting, purpose, freshness and unambiguous code are checked. Unmatched or unsupported mail is left manual. A code is consumed once; do not log it. Returning it does not submit it.
@@ -101,7 +101,7 @@ public sealed class BrowserCodeHelpWindow : Window
           mailbox: 'YOUR_GMAIL_ADDRESS', address: 'YOUR_GMAIL_ADDRESS',
           replaceExisting: false
         });
-          Adds/verifies a connected Gmail address or plus alias on the current authenticated, saved Roblox account. Omit address to use the mailbox's address. A different existing address is preserved by default. The explicit replaceExisting:true option permits replacing it. Requires a valid signed-in identity and may require the saved Roblox password or additional manual verification.
+          Adds/verifies the chosen email on the current authenticated, saved Roblox account. mailbox identifies the connected Gmail inbox that receives the code/link; displayEmail is the address used on Roblox. Custom-domain routing addresses and plus aliases are supported. Omit displayEmail to use the inbox address. The older address option remains supported as an alias; supplying both with different values is rejected. A different existing address is preserved by default. The explicit replaceExisting:true option permits replacing it. Requires a valid signed-in identity and may require the saved Roblox password or additional manual verification.
 
           Returns {verified, address, username}. Only Roblox's actual email status can confirm success. The trusted email link opens in a separate visible view while your script waits in its original document. Do not assume DOM operations after this helper target that view. Unknown email formats, parental/recovery steps, challenges and provider limits stay manual.
 
@@ -110,6 +110,12 @@ public sealed class BrowserCodeHelpWindow : Window
           email: {mailbox:'YOUR_GMAIL_ADDRESS', address:'YOUR_GMAIL_ADDRESS', verify:true}
         });
           Open Examples → Create account + Gmail for the complete template. The Roblox account is saved BEFORE email setup. After a later email failure, saved.emailVerified is false and saved.emailError describes the remaining step. The account remains saved; do not repeat signup to fix its email. If email was not requested, emailVerified is null. Set verify:false only to add the address without waiting for verification.
+
+          Forwarded email example:
+          await ram.email.linkAndVerify({mailbox:'you@gmail.com', displayEmail:'alt@example.com'});
+          await ram.email.waitForCode({mailbox:'you@gmail.com', displayEmail:'alt@example.com', username:'YOUR_ROBLOX_USERNAME'});
+          await ram.createAccount({...options, email:{mailbox:'you@gmail.com', displayEmail:'alt@example.com', verify:true}});
+          Configure your routing rules beforehand. The manager reads only the connected Gmail inbox, searches for the original Roblox recipient, and still checks the exact Roblox username, fresh timestamp, and Gmail's Roblox sender authentication. It does not create or change email forwarding rules. If forwarding replaces the original recipient or breaks sender authentication, verification remains manual. A saved association retains the Roblox address separately from the Gmail connection for later automatic email 2FA. Examples includes Link a forwarded email and Create account + forwarded email.
 
           Google credentials remain in your portable vault. A master password encrypts them. No master password leaves refresh tokens readable and is Not recommended. Layout exports and shareable builds exclude Google access. Google can expire Testing grants after seven days; reconnect in Settings. Current automatic parsing supports English Roblox email templates. Real private Gmail/Roblox flows require your own client setup and have not been live-tested.
 

@@ -52,13 +52,13 @@ public sealed class SignupEmail
 {
     public string Mailbox { get; set; } = "";
     public string Address { get; set; } = "";
+    public string DisplayEmail { get; set; } = "";
     public bool Verify { get; set; } = true;
     public override string ToString() => "SignupEmail [redacted]";
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(Mailbox) || Mailbox.Length > 254 || Mailbox.Any(char.IsControl)) throw new UserError("Choose a connected Gmail mailbox.");
-        if (Address is null) throw new UserError("Enter an email address or leave it blank for the connected mailbox.");
-        if (Address.Length > 0) _ = GmailAddress.Normalize(Address);
+        Address = GmailAddress.Target(Address, DisplayEmail);
     }
 }
 
@@ -72,15 +72,14 @@ public static class GmailAddress
             throw new UserError("Enter a valid email address without a display name.");
         return address.Address.ToLowerInvariant();
     }
-    public static bool BelongsTo(string recipient, string mailbox)
+    public static string Target(string address, string displayEmail)
     {
-        string Canonical(string input)
-        {
-            var address = new MailAddress(Normalize(input)); string user = address.User.Split('+')[0];
-            if (address.Host is "gmail.com" or "googlemail.com") return user.Replace(".", "") + "@gmail.com";
-            return user + "@" + address.Host;
-        }
-        return Canonical(recipient) == Canonical(mailbox);
+        if (address is null || displayEmail is null) throw new UserError("Enter the email address used on Roblox, or leave it blank to use the connected mailbox.");
+        string original = address.Length == 0 ? "" : Normalize(address);
+        string display = displayEmail.Length == 0 ? "" : Normalize(displayEmail);
+        if (original.Length > 0 && display.Length > 0 && original != display)
+            throw new UserError("address and displayEmail must match when both are supplied.");
+        return display.Length > 0 ? display : original;
     }
     public static void Validate(GmailSettings settings)
     {
@@ -105,6 +104,7 @@ public sealed class EmailRequest
     public string Action { get; set; } = "";
     public string Mailbox { get; set; } = "";
     public string Address { get; set; } = "";
+    public string DisplayEmail { get; set; } = "";
     public string Username { get; set; } = "";
     public int TimeoutSeconds { get; set; } = 120;
     public bool ReplaceExisting { get; set; }
@@ -115,7 +115,7 @@ public sealed class EmailRequest
             Mailbox is null || Mailbox.Length > 254 || Mailbox.Any(char.IsControl) || Address is null || Address.Length > 254 ||
             Username is null || Username.Length > 20 || Username.Any(char.IsControl)) throw new UserError("Invalid email operation.");
         if (Action != "list" && Mailbox.Length == 0) throw new UserError("Choose a connected Gmail mailbox.");
-        if (Address.Length > 0) _ = GmailAddress.Normalize(Address);
+        Address = GmailAddress.Target(Address, DisplayEmail);
         if (Username.Length > 0 && !Regex.IsMatch(Username, "^[A-Za-z0-9_]{3,20}$")) throw new UserError("Enter a Roblox username for the email operation.");
     }
 }

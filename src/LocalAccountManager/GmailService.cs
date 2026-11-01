@@ -31,8 +31,9 @@ public sealed class GmailService : IDisposable
         var result = state.Gmail.Connections.SingleOrDefault(c => c.Id.ToString("D").Equals(mailbox, StringComparison.OrdinalIgnoreCase) || c.Address.Equals(mailbox, StringComparison.OrdinalIgnoreCase));
         return result ?? throw new UserError("Connect this Gmail mailbox in Settings → Gmail first.");
     }
-    public string Recipient(GmailConnection connection, string address) => address.Length == 0 ? connection.Address :
-        GmailAddress.BelongsTo(address, connection.Address) ? GmailAddress.Normalize(address) : throw new UserError("Use the connected mailbox's address or one of its plus aliases.");
+    // The Roblox recipient can be a forwarding address. OAuth still restricts reads
+    // to this connected mailbox; message authentication/account/recipient checks remain mandatory.
+    public string Recipient(GmailConnection connection, string address) => GmailAddress.Normalize(address.Length == 0 ? connection.Address : address);
     public IReadOnlyList<GmailConnection> ForLogin(Account account) => account.GmailConnectionId is Guid id
         ? state.Gmail.Connections.Where(c => c.Id == id && account.AutoEmailCodes && c.AutomaticLoginCodes).ToList()
         : state.Gmail.Connections.Where(c => c.AutomaticLoginCodes).ToList();

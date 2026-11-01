@@ -52,6 +52,21 @@ public static class BrowserCodeExamples
         new("Create account + Gmail", SignupDescription + " Connect Gmail in Settings first. The account is saved before email setup; a pending email must never cause the account to be created again.",
             SignupExample("2captcha").Replace("proxy: null", "proxy: null,\n  email: {mailbox:'YOUR_GMAIL_ADDRESS', address:'YOUR_GMAIL_ADDRESS', verify:true}")
             .Replace("ram.status('Created and saved @' + saved.username);", "if (!saved.emailVerified) {\n  ram.status('Account created and saved. Email needs attention: ' + (saved.emailError || 'Finish verification in the browser.'));\n  return; // Keep the browser open; do not recreate this username.\n}\nram.status('Created, saved, and email verified @' + saved.username);"), GuestOnly:true),
+        new("Link a forwarded email", "Uses your custom-domain address on Roblox and reads verification mail from a separately connected Gmail inbox. Set up forwarding first. The original recipient and Roblox sender authentication must be preserved.", """
+            try {
+              const result = await ram.email.linkAndVerify({
+                mailbox: 'YOUR_GMAIL_ADDRESS', // Connected receiving inbox.
+                displayEmail: 'alt@example.com' // Address used on Roblox; forwards to that inbox.
+              });
+              ram.status(result.verified ? 'Roblox confirmed the forwarded email.' : 'Finish verification in the browser.');
+              if (result.verified) ram.done();
+            } catch (error) {
+              ram.status(error.message); // Keep the verification browser open for any remaining steps.
+            }
+            """, RequiresAccount:true),
+        new("Create account + forwarded email", SignupDescription + " Uses your existing custom-domain forwarding rules. mailbox is your connected Gmail inbox; displayEmail is the address saved on Roblox. A later email failure preserves the created account.",
+            SignupExample("2captcha").Replace("proxy: null", "proxy: null,\n  email: {mailbox:'YOUR_GMAIL_ADDRESS', displayEmail:'alt@example.com', verify:true}")
+            .Replace("ram.status('Created and saved @' + saved.username);", "if (!saved.emailVerified) {\n  ram.status('Account saved. Email needs attention: ' + (saved.emailError || 'Finish verification in the browser.'));\n  return;\n}\nram.status('Created, saved, and email verified @' + saved.username);"), GuestOnly:true),
         new("Join a group", "Set groupId in the code and enter the same ID in membership confirmation. Pending approval is not membership. Requires a selected account.",
             BrowserCodeRuntime.JoinGroupExample(1).Replace("const groupId = 1;", "const groupId = 0; // Replace 0 with your community ID."), RequiresAccount: true, Group: true)
     ];
