@@ -241,7 +241,7 @@ public sealed partial class AccountBrowser : Window
             var core = web.CoreWebView2;
             core.Settings.AreHostObjectsAllowed = false;
             core.Settings.IsWebMessageEnabled = false;
-            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.AreDevToolsEnabled = true;
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.IsStatusBarEnabled = true;
             core.Profile.IsPasswordAutosaveEnabled = false;
