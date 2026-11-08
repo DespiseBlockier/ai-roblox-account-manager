@@ -63,7 +63,9 @@ public static class Security
 
     public static bool IsApiUrl(Uri uri) => uri.Scheme == "https" && uri.IsDefaultPort && uri.UserInfo.Length == 0 &&
         (ApiHosts.Contains(uri.IdnHost) || uri.IdnHost.Equals("economy.roblox.com", StringComparison.OrdinalIgnoreCase) && uri.AbsolutePath == "/v1/user/currency" && uri.Query.Length == 0 && uri.Fragment.Length == 0 || uri.IdnHost.Equals("accountsettings.roblox.com", StringComparison.OrdinalIgnoreCase) && uri.Query.Length == 0 && (uri.AbsolutePath is "/v1/email" or "/v1/email/verify") || uri.IdnHost.Equals("apis.roblox.com", StringComparison.OrdinalIgnoreCase) &&
-            uri.AbsolutePath == "/user-settings-api/v1/account-insights/age-group" && uri.Query.Length == 0);
+            uri.AbsolutePath == "/user-settings-api/v1/account-insights/age-group" && uri.Query.Length == 0 ||
+            uri.IdnHost.Equals("inventory.roblox.com", StringComparison.OrdinalIgnoreCase) && uri.Query.Length == 0 && uri.Fragment.Length == 0 &&
+            Regex.IsMatch(uri.AbsolutePath, @"^/v1/users/[1-9][0-9]*/items/Asset/[1-9][0-9]*/is-owned$", RegexOptions.CultureInvariant));
 
     public static bool CanLaunchFromBrowser(string uri, string origin, string topLevel) =>
         IsBrowserPage(origin) && IsBrowserPage(topLevel) && uri.Length <= 20000 && !uri.Any(char.IsControl) &&

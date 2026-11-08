@@ -90,7 +90,7 @@ public partial class MainWindow : Window
 
     private void BrowserWarningDetected(Account account)
     {
-        if (closing || !state.Accounts.Contains(account)) return;
+        if (closing || !state.Accounts.Contains(account) || account.Restriction is { RequiresVerification: true }) return;
         var warning = account.Restriction is { IsWarning: true } existing ? existing : new ModerationRestriction(null, null, "");
         Moderation.Apply(account, warning with { IsBrowserWarning = true });
         AccountsGrid.Items.Refresh();
@@ -397,6 +397,19 @@ public partial class MainWindow : Window
             if (accounts.Count > 1) await Task.Delay(1700);
         }
         Refresh();
+    });
+
+    private async void CheckGameAccess_Click(object sender, RoutedEventArgs e) => await Run(async () =>
+    {
+        if (AccountsGrid.SelectedItems.Count != 1) throw new UserError("Select one account to check game access.");
+        var account = Selected();
+        var target = GameTarget.Parse(PlaceInput.Text);
+        if (target.PlaceId is not long placeId) throw new UserError("Enter a Roblox game link or place ID to check experience access.");
+        var previousCheck = account.ModerationCheckedAt;
+        Status.Text = "Checking game access for @" + account.Username + "…";
+        var result = await browsers.CheckGameAccess(account, placeId);
+        if (account.ModerationCheckedAt != previousCheck) { vault.Save(state); Refresh(); }
+        Status.Text = "@" + account.Username + " · " + result;
     });
 
     private async void BulkEdit_Click(object sender, RoutedEventArgs e) => await Run(() =>

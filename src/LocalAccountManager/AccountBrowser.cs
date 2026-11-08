@@ -110,12 +110,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         Exception? moderationError = null;
         try
         {
-            var restriction = await api.Restriction(cookie);
-            bool keepBrowserWarning = restriction is null && account.Restriction is { IsBrowserWarning: true } &&
-                (restrictedIdentity is not null || browsers.TryGetValue(account.Id, out var browser) && browser.IsOnModerationPage);
-            if (keepBrowserWarning) account.ModerationCheckStatus = "Using the last warning seen in the account browser";
-            else Moderation.Apply(account, restriction);
-            if (account.HasRestriction && restrictedIdentity is not null) account.SessionStatus = "Restricted · open browser";
+            await CheckModeration(account, cookie, restrictedIdentity is not null);
         }
         catch (Exception ex)
         {
@@ -141,6 +136,39 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
             }
         }
         if (moderationError is not null) throw moderationError;
+    }
+
+    private async Task CheckModeration(Account account, string cookie, bool identityBlocked)
+    {
+        long userId = account.UserId;
+        string savedCookie = account.SessionCookie;
+        if (identityBlocked && (userId <= 0 || cookie != savedCookie))
+            throw new UserError("Sign in to the saved account before checking its moderation status.");
+
+        var restriction = await api.Restriction(cookie, userId);
+        if (account.UserId != userId || account.SessionCookie != savedCookie)
+            throw new UserError("The saved session changed during the moderation check. Try again.");
+
+        bool keepBrowserWarning = restriction is null && account.Restriction is { IsBrowserWarning: true } &&
+            (identityBlocked || browsers.TryGetValue(account.Id, out var browser) && browser.IsOnModerationPage);
+        if (keepBrowserWarning) account.ModerationCheckStatus = "Using the last warning seen in the account browser";
+        else Moderation.Apply(account, restriction);
+        if (account.HasRestriction && identityBlocked) account.SessionStatus = "Restricted · open browser";
+    }
+
+    public async Task<string> CheckGameAccess(Account account, long placeId)
+    {
+        string cookie = await ReadCookieForCheck(account);
+        try { await VerifyCookie(account, cookie); }
+        catch (RobloxApiError ex) when (ex.StatusCode is 401 or 403)
+        {
+            try { await CheckModeration(account, cookie, identityBlocked: true); }
+            catch (Exception error) { Moderation.Failure(account, error); throw; }
+            return account.Restriction is { } restriction
+                ? restriction.Label(DateTimeOffset.UtcNow) + " · open the account browser to review Roblox's notice."
+                : Security.Friendly(ex);
+        }
+        return await api.CheckGameAccess(placeId, account.UserId, cookie);
     }
 
     public async Task Clear(Account account)

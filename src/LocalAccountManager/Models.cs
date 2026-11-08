@@ -41,12 +41,12 @@ public sealed class Account
     public ModerationRestriction? Restriction { get; set; }
     public DateTimeOffset? ModerationCheckedAt { get; set; }
     [JsonIgnore] public string ModerationCheckStatus { get; set; } = "Not checked this session";
-    [JsonIgnore] public bool HasRestriction => Restriction is not null && !Restriction.IsWarning;
+    [JsonIgnore] public bool HasRestriction => Restriction is { IsWarning: false, RequiresVerification: false };
     [JsonIgnore] public string ModerationLabel => Restriction?.Label(DateTimeOffset.UtcNow) ?? (ModerationCheckedAt is null ? "Ban not checked" : "No active ban");
     [JsonIgnore] public string ModerationTiming => Restriction?.Timing ?? "";
     [JsonIgnore] public string ModerationColor => Restriction is null ? "#A9B3C5" : Restriction.IsWarning ? "#FFE26A" : Restriction.HasExpired(DateTimeOffset.UtcNow) ? "#F6C977" : "#FF927D";
     [JsonIgnore] public string ModerationDetails => ModerationLabel + "\n" +
-        (Restriction is { } restriction ? (restriction.IsWarning ?
+        (Restriction is { } restriction ? (restriction.RequiresVerification ? "\nRoblox locked this account. Open the account browser to verify it." : restriction.IsWarning ?
             (restriction.Began is { } issued ? "\nIssued: " + issued.ToLocalTime().ToString("f") : "") + "\nOpen the account browser to review this warning." :
             (restriction.Began is { } start ? "\nStarted: " + start.ToLocalTime().ToString("f") : "\nStart date unavailable") +
             (restriction.Ends is { } end ? "\nEnds: " + end.ToLocalTime().ToString("f") : "\nRoblox did not provide an end date. Duration is unknown.") +

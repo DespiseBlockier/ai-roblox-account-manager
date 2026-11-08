@@ -256,7 +256,7 @@ public sealed partial class Vault : IDisposable
                 !AgeGroups.IsValid(a.AgeGroup) || !Text(a.EmailAddress, 254) || a.RobuxBalance is < 0) throw new UserError("The account data is invalid.");
             if (a.EmailAddress.Length > 0) _ = GmailAddress.Normalize(a.EmailAddress);
             if (a.GmailConnectionId is Guid mailbox && !state.Gmail.Connections.Any(c => c.Id == mailbox)) throw new UserError("An account refers to a missing Gmail connection.");
-            if (a.Restriction is { } restriction && (!Text(restriction.Reason, 4000) ||
+            if (a.Restriction is { } restriction && (!Enum.IsDefined(restriction.Kind) || !Text(restriction.Reason, 4000) ||
                 (restriction.Began is { } start && restriction.Ends is { } end && end < start)))
                 throw new UserError("The saved moderation data is invalid.");
         }

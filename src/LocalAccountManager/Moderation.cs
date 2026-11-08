@@ -4,15 +4,21 @@ using System.Text.Json.Serialization;
 
 namespace LocalAccountManager;
 
+public enum ModerationKind { Legacy, Warning, AccountVerification }
+internal enum RestrictionSource { Moderation = 1, AccountLock = 5 }
+
 // Cached evidence from Roblox, not a prediction based on failed authentication.
 public sealed record ModerationRestriction(DateTimeOffset? Began, DateTimeOffset? Ends, string Reason)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public ModerationKind Kind { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool IsBrowserWarning { get; init; }
-    [JsonIgnore] public bool IsWarning => IsBrowserWarning || Began is { } start && Ends is { } end && end == start;
-    public bool HasExpired(DateTimeOffset now) => !IsWarning && Ends is { } end && end <= now;
-    public string Label(DateTimeOffset now) => IsWarning ? "Warning" : HasExpired(now) ? "Expired · reactivate" :
+    [JsonIgnore] public bool RequiresVerification => Kind == ModerationKind.AccountVerification;
+    [JsonIgnore] public bool IsWarning => Kind == ModerationKind.Warning || Kind == ModerationKind.Legacy &&
+        (IsBrowserWarning || Began is { } start && Ends is { } end && end == start);
+    public bool HasExpired(DateTimeOffset now) => !IsWarning && !RequiresVerification && Ends is { } end && end <= now;
+    public string Label(DateTimeOffset now) => RequiresVerification ? "Verify account" : IsWarning ? "Warning" : HasExpired(now) ? "Expired · reactivate" :
         Began is { } start && Ends is { } end ? "Banned · " + Duration(end - start) : "Restricted · duration unknown";
-    [JsonIgnore] public string Timing => Ends is { } end && !IsWarning ? (HasExpired(DateTimeOffset.UtcNow) ? "Ended " : "Ends ") + end.ToLocalTime().ToString("MMM d, HH:mm") : "Open browser for details";
+    [JsonIgnore] public string Timing => Ends is { } end && !IsWarning && !RequiresVerification ? (HasExpired(DateTimeOffset.UtcNow) ? "Ended " : "Ends ") + end.ToLocalTime().ToString("MMM d, HH:mm") : "Open browser for details";
 
     public static string Duration(TimeSpan value)
     {
@@ -24,12 +30,36 @@ public sealed record ModerationRestriction(DateTimeOffset? Began, DateTimeOffset
 
 public static class Moderation
 {
-    public static ModerationRestriction? Parse(JsonElement root)
+    public static ModerationRestriction? Parse(JsonElement root, long? expectedUserId = null)
     {
         if (root.ValueKind != JsonValueKind.Object || root.TryGetProperty("errors", out _)) throw InvalidResponse();
-        if (!root.TryGetProperty("interventionId", out var intervention) || intervention.ValueKind == JsonValueKind.Null) return null;
-        if (!((intervention.ValueKind == JsonValueKind.Number && intervention.TryGetInt64(out long id) && id > 0) ||
-            (intervention.ValueKind == JsonValueKind.String && intervention.GetString() is { Length: > 0 and <= 200 }))) throw InvalidResponse();
+        long punishedUserId = 0;
+        if (root.TryGetProperty("punishedUserId", out var user) && user.ValueKind != JsonValueKind.Null)
+        {
+            bool valid = user.ValueKind switch
+            {
+                JsonValueKind.Number => user.TryGetInt64(out punishedUserId),
+                JsonValueKind.String => long.TryParse(user.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out punishedUserId),
+                _ => false
+            };
+            if (!valid || punishedUserId < 0) throw InvalidResponse();
+            if (punishedUserId > 0 && expectedUserId is long expected && punishedUserId != expected)
+                throw new UserError("Roblox returned moderation for a different account.");
+        }
+        string? punishment = root.TryGetProperty("punishmentTypeDescription", out var type) && type.ValueKind == JsonValueKind.String ? type.GetString() : null;
+        bool warning = punishment == "Warn";
+        bool typedRestriction = warning || punishment == "Delete" || punishment?.StartsWith("Ban ", StringComparison.Ordinal) == true;
+        // Roblox's current moderation page uses the punishment type and affected user, even without a legacy intervention ID.
+        if (!typedRestriction || punishedUserId == 0)
+        {
+            if (!root.TryGetProperty("interventionId", out var intervention) || intervention.ValueKind == JsonValueKind.Null)
+            {
+                if (typedRestriction) throw InvalidResponse();
+                return null;
+            }
+            if (!((intervention.ValueKind == JsonValueKind.Number && intervention.TryGetInt64(out long id) && id > 0) ||
+                (intervention.ValueKind == JsonValueKind.String && intervention.GetString() is { Length: > 0 and <= 200 }))) throw InvalidResponse();
+        }
         var began = Date(root, "beginDate");
         var ends = Date(root, "endDate");
         if (began is { } start && ends is { } end && end < start) throw InvalidResponse();
@@ -39,7 +69,17 @@ public static class Moderation
             if (message.ValueKind != JsonValueKind.String || message.GetString() is not { Length: <= 4000 } text || text.Contains('\0')) throw InvalidResponse();
             reason = text;
         }
-        return new(began, ends, reason);
+        return new(began, ends, reason) { Kind = warning ? ModerationKind.Warning : ModerationKind.Legacy };
+    }
+
+    internal static RestrictionSource? ReadRestrictionSource(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object || root.TryGetProperty("errors", out _) ||
+            !root.TryGetProperty("restriction", out var restriction)) throw InvalidResponse();
+        if (restriction.ValueKind == JsonValueKind.Null) return null;
+        if (restriction.ValueKind != JsonValueKind.Object || !restriction.TryGetProperty("source", out var source) ||
+            source.ValueKind != JsonValueKind.Number || !source.TryGetInt32(out int kind) || kind <= 0) throw InvalidResponse();
+        return (RestrictionSource)kind;
     }
 
     private static DateTimeOffset? Date(JsonElement root, string key)

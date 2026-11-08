@@ -166,11 +166,26 @@ public sealed class RobloxApi : IDisposable
         using var json = await Json(response); return RobuxBalances.Parse(json.RootElement);
     }
 
-    public async Task<ModerationRestriction?> Restriction(string cookie)
+    public async Task<ModerationRestriction?> Restriction(string cookie, long? expectedUserId = null)
     {
+        RobloxApiError? lockCheckError = null;
+        RestrictionSource? source = null;
+        try
+        {
+            using var access = await Send(HttpMethod.Get, "https://usermoderation.roblox.com/v2/not-approved", cookie);
+            using var current = await Json(access);
+            source = Moderation.ReadRestrictionSource(current.RootElement);
+            if (source == RestrictionSource.AccountLock) return new(null, null, "") { Kind = ModerationKind.AccountVerification };
+        }
+        catch (RobloxApiError ex) when (ex.StatusCode is 401 or 403) { lockCheckError = ex; }
+
         using var response = await Send(HttpMethod.Get, "https://usermoderation.roblox.com/v1/not-approved", cookie);
         using var json = await Json(response);
-        return Moderation.Parse(json.RootElement);
+        var restriction = Moderation.Parse(json.RootElement, expectedUserId);
+        if (restriction is null && lockCheckError is not null) throw lockCheckError;
+        if (restriction is null && source == RestrictionSource.Moderation)
+            throw new UserError("Roblox reported a restriction without moderation details. Open the account browser to review it.");
+        return restriction;
     }
 
     public async Task<AgeGroupResult> AgeGroup(string cookie)
@@ -178,6 +193,31 @@ public sealed class RobloxApi : IDisposable
         using var response = await Send(HttpMethod.Get, "https://apis.roblox.com/user-settings-api/v1/account-insights/age-group", cookie);
         using var json = await Json(response);
         return AgeGroups.Parse(json.RootElement);
+    }
+
+    public async Task<string> CheckGameAccess(long placeId, long userId, string cookie)
+    {
+        if (placeId <= 0 || userId <= 0) throw new UserError("Select a connected account and enter a valid Roblox place ID.");
+        using var detailsResponse = await Send(HttpMethod.Get, $"https://games.roblox.com/v1/games/multiget-place-details?placeIds={placeId}", cookie);
+        using var details = await Json(detailsResponse);
+        var game = GameAccess.ReadPlace(details.RootElement, placeId);
+
+        using var accessResponse = await Send(HttpMethod.Get, $"https://games.roblox.com/v1/games/multiget-playability-status?universeIds={game.UniverseId}", cookie);
+        using var access = await Json(accessResponse);
+        var result = GameAccess.ReadStatus(access.RootElement, game.UniverseId);
+        bool? owns = null;
+        if ((game.Paid || result.PurchaseRequired) && game.RootPlaceId is long rootPlaceId)
+        {
+            try
+            {
+                using var ownership = await Send(HttpMethod.Get, $"https://inventory.roblox.com/v1/users/{userId}/items/Asset/{rootPlaceId}/is-owned", cookie);
+                using var owned = await Json(ownership);
+                if (owned.RootElement.ValueKind is JsonValueKind.True or JsonValueKind.False) owns = owned.RootElement.GetBoolean();
+            }
+            catch (Exception ex) when (ex is UserError or HttpRequestException or JsonException or OperationCanceledException)
+            { /* The game access result remains useful when inventory ownership cannot be read. */ }
+        }
+        return GameAccess.Describe(game, result, owns);
     }
 
     public async Task<bool> IsGroupMember(string cookie, long userId, long groupId)
