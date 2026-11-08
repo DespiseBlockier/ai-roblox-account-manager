@@ -7,9 +7,10 @@ namespace LocalAccountManager;
 // Cached evidence from Roblox, not a prediction based on failed authentication.
 public sealed record ModerationRestriction(DateTimeOffset? Began, DateTimeOffset? Ends, string Reason)
 {
-    [JsonIgnore] public bool IsWarning => Began is { } start && Ends is { } end && end == start;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool IsBrowserWarning { get; init; }
+    [JsonIgnore] public bool IsWarning => IsBrowserWarning || Began is { } start && Ends is { } end && end == start;
     public bool HasExpired(DateTimeOffset now) => !IsWarning && Ends is { } end && end <= now;
-    public string Label(DateTimeOffset now) => IsWarning ? "Warning · open browser" : HasExpired(now) ? "Expired · reactivate" :
+    public string Label(DateTimeOffset now) => IsWarning ? "Warning" : HasExpired(now) ? "Expired · reactivate" :
         Began is { } start && Ends is { } end ? "Banned · " + Duration(end - start) : "Restricted · duration unknown";
     [JsonIgnore] public string Timing => Ends is { } end && !IsWarning ? (HasExpired(DateTimeOffset.UtcNow) ? "Ended " : "Ends ") + end.ToLocalTime().ToString("MMM d, HH:mm") : "Open browser for details";
 
@@ -54,7 +55,7 @@ public static class Moderation
     {
         account.Restriction = restriction;
         account.ModerationCheckedAt = DateTimeOffset.UtcNow;
-        account.ModerationCheckStatus = "Checked";
+        account.ModerationCheckStatus = restriction is { IsBrowserWarning: true } ? "Warning seen in the account browser" : "Checked";
     }
     public static void Failure(Account account, Exception error) => account.ModerationCheckStatus = error switch
     {

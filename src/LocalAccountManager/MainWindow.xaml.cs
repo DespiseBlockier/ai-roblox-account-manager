@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         enrollment = new AccountEnrollment(state, () => vault.Save(state));
         gmail = new GmailService(state, () => vault.Save(state));
         browsers = new BrowserHub(vault, this.api, Connected, AddBrowserAccount, gmail);
+        browsers.WarningDetected += BrowserWarningDetected;
         InitializeComponent();
         Refresh();
         UpdateProtectionLabel();
@@ -85,6 +86,17 @@ public partial class MainWindow : Window
         enrollment.Commit(account, identity, cookie, saveCredential: fromLogin); Refresh();
         Status.Text = "Connected @" + identity.Name + ".";
         return Task.CompletedTask;
+    }
+
+    private void BrowserWarningDetected(Account account)
+    {
+        if (closing || !state.Accounts.Contains(account)) return;
+        var warning = account.Restriction is { IsWarning: true } existing ? existing : new ModerationRestriction(null, null, "");
+        Moderation.Apply(account, warning with { IsBrowserWarning = true });
+        AccountsGrid.Items.Refresh();
+        SelectionLabel();
+        try { vault.Save(state); }
+        catch (Exception ex) { Status.Text = "Warning detected. It could not be saved. " + Security.Friendly(ex); }
     }
 
     private async Task<Account> AddBrowserAccount(RobloxIdentity identity, string cookie, string? password, string? group, CancellationToken cancel)

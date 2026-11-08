@@ -23,7 +23,7 @@
         <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <DockPanel Margin="15,13"><StackPanel Orientation="Horizontal"><TextBlock x:Name="CountLabel" FontWeight="SemiBold" VerticalAlignment="Center"/><Button x:Name="ClearSelectionButton" Content="Clear selection" Click="ClearSelection_Click" Padding="7,3" FontSize="11" Margin="10,0,0,0"/></StackPanel><CheckBox x:Name="StarredOnly" Content="Favorites only" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0" Checked="FavoriteFilter_Changed" Unchecked="FavoriteFilter_Changed"/></DockPanel>
           <Grid Grid.Row="1">
-            <DataGrid x:Name="AccountsGrid" RowHeight="94" SelectionChanged="Accounts_Changed" MouseDoubleClick="Accounts_DoubleClick">
+            <DataGrid x:Name="AccountsGrid" RowHeight="94" VirtualizingPanel.ScrollUnit="Pixel" SelectionChanged="Accounts_Changed" MouseDoubleClick="Accounts_DoubleClick">
               <DataGrid.RowStyle><Style TargetType="DataGridRow"><Style.Triggers>
                 <DataTrigger Binding="{Binding HasRestriction}" Value="True"><Setter Property="Background" Value="#3C2027"/><Setter Property="BorderBrush" Value="#C85361"/><Setter Property="BorderThickness" Value="3,0,0,0"/></DataTrigger>
               </Style.Triggers></Style></DataGrid.RowStyle>

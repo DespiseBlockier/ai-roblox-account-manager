@@ -13,6 +13,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
     private readonly Dictionary<Guid, AccountBrowser> browsers = [];
     private Task<CoreWebView2Environment>? environment;
     public int Count => browsers.Count;
+    public event Action<Account>? WarningDetected;
     public void CloseAccount(Account account)
     {
         if (browsers.TryGetValue(account.Id, out var browser)) browser.Close();
@@ -43,6 +44,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         }
         var browser = new AccountBrowser(account, env, api, onIdentity, guest, onAddAccount, gmail);
         browser.AccountAdded += saved => { if (guest) CloseAccount(saved); };
+        browser.WarningDetected += warned => WarningDetected?.Invoke(warned);
         browsers.Add(account.Id, browser);
         browser.Closed += (_, _) => browsers.Remove(account.Id);
         // WPF initializes WebView2 after Loaded. A helper starts minimized without taking focus,
@@ -108,8 +110,12 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
         Exception? moderationError = null;
         try
         {
-            Moderation.Apply(account, await api.Restriction(cookie));
-            if (account.Restriction is not null && restrictedIdentity is not null) account.SessionStatus = "Restricted · open browser";
+            var restriction = await api.Restriction(cookie);
+            bool keepBrowserWarning = restriction is null && account.Restriction is { IsBrowserWarning: true } &&
+                (restrictedIdentity is not null || browsers.TryGetValue(account.Id, out var browser) && browser.IsOnModerationPage);
+            if (keepBrowserWarning) account.ModerationCheckStatus = "Using the last warning seen in the account browser";
+            else Moderation.Apply(account, restriction);
+            if (account.HasRestriction && restrictedIdentity is not null) account.SessionStatus = "Restricted · open browser";
         }
         catch (Exception ex)
         {
@@ -250,6 +256,7 @@ public sealed partial class AccountBrowser : Window
                 if (args.Uri.StartsWith("roblox-player:", StringComparison.OrdinalIgnoreCase) && Security.IsBrowserPage(core.Source)) return;
                 if (!Security.IsBrowserPage(args.Uri) && args.Uri != "about:blank")
                 { args.Cancel = true; status.Text = "This browser only opens Roblox pages. External navigation was blocked."; }
+                else navigationId = args.NavigationId;
             };
             core.NewWindowRequested += (_, args) =>
             {
@@ -268,7 +275,8 @@ public sealed partial class AccountBrowser : Window
             core.WindowCloseRequested += (_, _) => Close();
             core.NavigationCompleted += async (_, args) =>
             {
-                if (!args.IsSuccess || !loginMode || disposed) return;
+                if (!args.IsSuccess || disposed) return;
+                if (!loginMode) { await CheckBrowserWarning(core, args.NavigationId); return; }
                 try { await Autofill(); } catch (Exception ex) { if (!disposed) status.Text = Security.Friendly(ex); }
             };
             ready.TrySetResult();
