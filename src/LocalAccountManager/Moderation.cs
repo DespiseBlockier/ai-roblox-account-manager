@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace LocalAccountManager;
 
-public enum ModerationKind { Legacy, Warning, AccountVerification }
+public enum ModerationKind { Legacy, Warning, AccountVerification, PermanentBan }
 internal enum RestrictionSource { Moderation = 1, AccountLock = 5 }
 
 // Cached evidence from Roblox, not a prediction based on failed authentication.
@@ -13,12 +13,13 @@ public sealed record ModerationRestriction(DateTimeOffset? Began, DateTimeOffset
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public ModerationKind Kind { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool IsBrowserWarning { get; init; }
     [JsonIgnore] public bool RequiresVerification => Kind == ModerationKind.AccountVerification;
+    [JsonIgnore] public bool IsPermanentBan => Kind == ModerationKind.PermanentBan;
     [JsonIgnore] public bool IsWarning => Kind == ModerationKind.Warning || Kind == ModerationKind.Legacy &&
         (IsBrowserWarning || Began is { } start && Ends is { } end && end == start);
-    public bool HasExpired(DateTimeOffset now) => !IsWarning && !RequiresVerification && Ends is { } end && end <= now;
-    public string Label(DateTimeOffset now) => RequiresVerification ? "Verify account" : IsWarning ? "Warning" : HasExpired(now) ? "Expired · reactivate" :
+    public bool HasExpired(DateTimeOffset now) => !IsWarning && !RequiresVerification && !IsPermanentBan && Ends is { } end && end <= now;
+    public string Label(DateTimeOffset now) => RequiresVerification ? "Verify account" : IsWarning ? "Warning" : IsPermanentBan ? "Banned · permanent" : HasExpired(now) ? "Expired · reactivate" :
         Began is { } start && Ends is { } end ? "Banned · " + Duration(end - start) : "Restricted · duration unknown";
-    [JsonIgnore] public string Timing => Ends is { } end && !IsWarning && !RequiresVerification ? (HasExpired(DateTimeOffset.UtcNow) ? "Ended " : "Ends ") + end.ToLocalTime().ToString("MMM d, HH:mm") : "Open browser for details";
+    [JsonIgnore] public string Timing => Ends is { } end && !IsWarning && !RequiresVerification && !IsPermanentBan ? (HasExpired(DateTimeOffset.UtcNow) ? "Ended " : "Ends ") + end.ToLocalTime().ToString("MMM d, HH:mm") : "Open browser for details";
 
     public static string Duration(TimeSpan value)
     {
@@ -48,7 +49,8 @@ public static class Moderation
         }
         string? punishment = root.TryGetProperty("punishmentTypeDescription", out var type) && type.ValueKind == JsonValueKind.String ? type.GetString() : null;
         bool warning = punishment == "Warn";
-        bool typedRestriction = warning || punishment == "Delete" || punishment?.StartsWith("Ban ", StringComparison.Ordinal) == true;
+        bool permanent = punishment == "Delete";
+        bool typedRestriction = warning || permanent || punishment?.StartsWith("Ban ", StringComparison.Ordinal) == true;
         // Roblox's current moderation page uses the punishment type and affected user, even without a legacy intervention ID.
         if (!typedRestriction || punishedUserId == 0)
         {
@@ -61,7 +63,8 @@ public static class Moderation
                 (intervention.ValueKind == JsonValueKind.String && intervention.GetString() is { Length: > 0 and <= 200 }))) throw InvalidResponse();
         }
         var began = Date(root, "beginDate");
-        var ends = Date(root, "endDate");
+        // Roblox's Delete punishment has no scheduled end, even if a legacy date is present.
+        var ends = permanent ? null : Date(root, "endDate");
         if (began is { } start && ends is { } end && end < start) throw InvalidResponse();
         string reason = "";
         if (root.TryGetProperty("messageToUser", out var message) && message.ValueKind != JsonValueKind.Null)
@@ -69,7 +72,7 @@ public static class Moderation
             if (message.ValueKind != JsonValueKind.String || message.GetString() is not { Length: <= 4000 } text || text.Contains('\0')) throw InvalidResponse();
             reason = text;
         }
-        return new(began, ends, reason) { Kind = warning ? ModerationKind.Warning : ModerationKind.Legacy };
+        return new(began, ends, reason) { Kind = permanent ? ModerationKind.PermanentBan : warning ? ModerationKind.Warning : ModerationKind.Legacy };
     }
 
     internal static RestrictionSource? ReadRestrictionSource(JsonElement root)

@@ -151,7 +151,9 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
 
         bool keepBrowserWarning = restriction is null && account.Restriction is { IsBrowserWarning: true } &&
             (identityBlocked || browsers.TryGetValue(account.Id, out var browser) && browser.IsOnModerationPage);
-        if (keepBrowserWarning) account.ModerationCheckStatus = "Using the last warning seen in the account browser";
+        if (restriction is null && identityBlocked && account.Restriction is { IsPermanentBan: true })
+            account.ModerationCheckStatus = "Using the last confirmed permanent ban";
+        else if (keepBrowserWarning) account.ModerationCheckStatus = "Using the last warning seen in the account browser";
         else Moderation.Apply(account, restriction);
         if (account.HasRestriction && identityBlocked) account.SessionStatus = "Restricted · open browser";
     }

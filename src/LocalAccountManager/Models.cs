@@ -49,7 +49,7 @@ public sealed class Account
         (Restriction is { } restriction ? (restriction.RequiresVerification ? "\nRoblox locked this account. Open the account browser to verify it." : restriction.IsWarning ?
             (restriction.Began is { } issued ? "\nIssued: " + issued.ToLocalTime().ToString("f") : "") + "\nOpen the account browser to review this warning." :
             (restriction.Began is { } start ? "\nStarted: " + start.ToLocalTime().ToString("f") : "\nStart date unavailable") +
-            (restriction.Ends is { } end ? "\nEnds: " + end.ToLocalTime().ToString("f") : "\nRoblox did not provide an end date. Duration is unknown.") +
+            (restriction.IsPermanentBan ? "\nNo scheduled end." : restriction.Ends is { } end ? "\nEnds: " + end.ToLocalTime().ToString("f") : "\nRoblox did not provide an end date. Duration is unknown.") +
             (restriction.Began is { } began && restriction.Ends is { } ends && ends > began ? "\nDuration: " + ModerationRestriction.Duration(ends - began) : "") +
             (restriction.HasExpired(DateTimeOffset.UtcNow) ? "\nThe end time has passed. Open the browser to review/reactivate; this does not confirm the account is unbanned." : "")) +
             (restriction.Reason.Length > 0 ? "\n\nRoblox message:\n" + restriction.Reason : "") + "\n" : "") +

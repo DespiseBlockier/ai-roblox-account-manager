@@ -90,7 +90,7 @@ public partial class MainWindow : Window
 
     private void BrowserWarningDetected(Account account)
     {
-        if (closing || !state.Accounts.Contains(account) || account.Restriction is { RequiresVerification: true }) return;
+        if (closing || !state.Accounts.Contains(account) || account.Restriction is { RequiresVerification: true } or { IsPermanentBan: true }) return;
         var warning = account.Restriction is { IsWarning: true } existing ? existing : new ModerationRestriction(null, null, "");
         Moderation.Apply(account, warning with { IsBrowserWarning = true });
         AccountsGrid.Items.Refresh();
