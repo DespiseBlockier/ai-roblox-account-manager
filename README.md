@@ -12,7 +12,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Start
 
-Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.17.0/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.17.0-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
+Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.17.1/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.17.1-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
 
 On first launch, create a **master password**. Any nonempty password up to 1,024 characters is accepted; 12+ characters are recommended. Shorter passwords show a nonblocking **Not secure** reminder. With password protection, your accounts, saved passwords, cookies, groups, and game data are encrypted in `Data/accounts.vault` beside the executable. Protected vaults require that password each launch. Keep it safe; the app cannot recover it.
 
@@ -34,7 +34,7 @@ The release targets **Windows x64** and includes the .NET runtime. [Microsoft Ed
 4. A new account row and its credentials are saved only after Roblox confirms the intended username. Closing the sign-in browser stops the queue and discards remaining unsaved logins. Successfully connected accounts stay saved. Repeated Add clicks resume the current login instead of adding placeholders. Old default placeholders from v1.0 are removed on startup.
 5. Select an account, enter a place ID or game link, and click **Join server**. Roblox must already be installed. A launch request is not proof that the player successfully joined. Each account has its own browser profile, separate from your regular browser.
 
-**Check game access** uses one selected account. Enter a place ID or an experience link, then click the button to see Roblox’s playability reason, the price of paid access, and any confirmed ownership. Some creator-managed bans only appear when joining a game.
+Select accounts, enter a place ID or an experience link, and click **Check game access**. When you select multiple accounts, a results window lists each account’s playability, price, and confirmed ownership as the checks finish. Some creator-managed bans only appear when joining a game.
 
 The bulk entry box displays pasted passwords or cookies while you edit it and clears when the queue starts or the dialog closes. It has no undo history. No import list is written to disk. Cookie imports mark their browser profile for refresh so a stale profile does not override the new verified cookie.
 
@@ -148,7 +148,7 @@ Updates started from v1.5.3 or newer automatically reopen the currently unlocked
 
 ## Build from source
 
-Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.17.0` and `releases/RobloxAccountManager-1.17.0-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
+Run **Build.cmd** with a .NET 10 SDK to create `dist/v1.17.1` and `releases/RobloxAccountManager-1.17.1-win-x64.zip`. The EXE bundles the app and .NET runtime and contains the original icon. WebView2 Runtime is installed separately. The SDK under `.tools/dotnet` is used if present; NuGet uses nuget.org and the dependency lockfile.
 
 The extracted app contains only the EXE, `START-HERE.txt`, `SHA256SUMS.txt`, and `Docs` (this guide, licenses, and the browser-code example). Native runtime components use the standard per-user .NET temporary cache. Your account data stays in Data beside the EXE.
 

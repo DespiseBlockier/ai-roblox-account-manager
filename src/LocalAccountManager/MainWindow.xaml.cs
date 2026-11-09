@@ -401,15 +401,27 @@ public partial class MainWindow : Window
 
     private async void CheckGameAccess_Click(object sender, RoutedEventArgs e) => await Run(async () =>
     {
-        if (AccountsGrid.SelectedItems.Count != 1) throw new UserError("Select one account to check game access.");
-        var account = Selected();
+        var accounts = SelectedMany();
         var target = GameTarget.Parse(PlaceInput.Text);
         if (target.PlaceId is not long placeId) throw new UserError("Enter a Roblox game link or place ID to check experience access.");
-        var previousCheck = account.ModerationCheckedAt;
-        Status.Text = "Checking game access for @" + account.Username + "…";
-        var result = await browsers.CheckGameAccess(account, placeId);
-        if (account.ModerationCheckedAt != previousCheck) { vault.Save(state); Refresh(); }
-        Status.Text = "@" + account.Username + " · " + result;
+        async Task<string> Check(Account account)
+        {
+            var previousCheck = account.ModerationCheckedAt;
+            var result = await browsers.CheckGameAccess(account, placeId);
+            if (account.ModerationCheckedAt != previousCheck) { vault.Save(state); Refresh(); }
+            return result;
+        }
+        if (accounts.Count == 1)
+        {
+            var account = accounts[0];
+            Status.Text = "Checking game access for @" + account.Username + "…";
+            Status.Text = "@" + account.Username + " · " + await Check(account);
+            return;
+        }
+        if (checkingSessions) throw new UserError("Wait for the current account status check to finish, then check game access.");
+        var results = new GameAccessResultsWindow(this, placeId, accounts, Check);
+        results.ShowDialog();
+        Status.Text = results.Summary;
     });
 
     private async void BulkEdit_Click(object sender, RoutedEventArgs e) => await Run(() =>

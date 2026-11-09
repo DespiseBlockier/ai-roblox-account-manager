@@ -214,7 +214,7 @@ public sealed class RobloxApi : IDisposable
                 using var owned = await Json(ownership);
                 if (owned.RootElement.ValueKind is JsonValueKind.True or JsonValueKind.False) owns = owned.RootElement.GetBoolean();
             }
-            catch (Exception ex) when (ex is UserError or HttpRequestException or JsonException or OperationCanceledException)
+            catch (Exception ex) when (ex is UserError and not RobloxApiError { StatusCode: 429 } or HttpRequestException or JsonException or OperationCanceledException)
             { /* The game access result remains useful when inventory ownership cannot be read. */ }
         }
         return GameAccess.Describe(game, result, owns);
