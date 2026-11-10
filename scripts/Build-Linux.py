@@ -96,7 +96,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="ram-linux-", dir=release) as scratch:
         work = Path(scratch)
         publish = work / "publish"
-        subprocess.run([dotnet, "restore", str(PROJECT), "--runtime", RUNTIME,
+        subprocess.run([dotnet, "restore", str(PROJECT), f"-p:RuntimeIdentifier={RUNTIME}",
                         "-p:SelfContained=true", "--locked-mode", "--configfile", str(ROOT / "NuGet.Config")],
                        check=True, cwd=ROOT, env=env)
         subprocess.run([dotnet, "publish", str(PROJECT), "-c", "Release", "-r", RUNTIME, "--self-contained",
