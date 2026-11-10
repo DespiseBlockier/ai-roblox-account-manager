@@ -65,10 +65,10 @@ jobs:
           set -euo pipefail
           if [[ $DISTRO == arch ]]; then
             pacman -Syu --noconfirm --needed libx11 libice libsm libxcursor libxrandr libxext libxi libxrender libxfixes \
-              libglvnd fontconfig ttf-dejavu icu openssl zlib xorg-server-xvfb xdotool tar gzip
+              fontconfig ttf-dejavu icu openssl xorg-server-xvfb xdotool tar gzip
           else
             zypper --non-interactive install --no-recommends libX11-6 libICE6 libSM6 libXcursor1 libXrandr2 libXext6 \
-              libXi6 libXrender1 libXfixes3 libGL1 fontconfig dejavu-fonts libicu-devel libopenssl3 zlib \
+              libXi6 libXrender1 libXfixes3 fontconfig dejavu-fonts libicu-devel libopenssl3 libz1 \
               xorg-x11-server-Xvfb xdotool tar gzip
           fi
           cd "$(mktemp -d)"
@@ -79,17 +79,32 @@ jobs:
           ./RobloxAccountManager --version
           app/.playwright/node/linux-x64/node --version
           export DISPLAY=:41
-          Xvfb "$DISPLAY" -screen 0 1280x900x24 -nolisten tcp -ac >xvfb.log 2>&1 &
+          ulimit -c 0
+          Xvfb "$DISPLAY" -screen 0 1280x900x24 -nolisten tcp -ac </dev/null &
           xserver=$!
           manager=
-          trap 'cat xvfb.log manager.log 2>/dev/null || true; kill "$xserver" ${manager:+"$manager"} 2>/dev/null || true' EXIT
+          trap 'kill "$xserver" ${manager:+"$manager"} 2>/dev/null || true' EXIT
           timeout 15s bash -c 'until xdotool getdisplaygeometry >/dev/null 2>&1; do sleep 0.2; done'
           start() {
-            ./RobloxAccountManager > manager.log 2>&1 &
+            ./RobloxAccountManager </dev/null &
             manager=$!
           }
           wait_for_window() {
-            timeout 25s xdotool search --sync --onlyvisible --name "$1" | sed -n '1p'
+            local window
+            for _ in {1..100}; do
+              if window=$(xdotool search --onlyvisible --name "$1" | sed -n '1p') && [[ -n $window ]]; then
+                printf '%s\n' "$window"
+                return 0
+              fi
+              if ! kill -0 "$manager" 2>/dev/null; then
+                echo "Manager exited before showing $1" >&2
+                wait "$manager"
+                return 1
+              fi
+              sleep 0.25
+            done
+            echo "Timed out waiting for $1" >&2
+            return 1
           }
           start
           unlock=$(wait_for_window '^Create your portable vault$')

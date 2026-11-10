@@ -30,12 +30,15 @@ internal static class Program
         {
             DataRoot = args.Length == 2 ? Path.GetFullPath(args[1]) :
                 Vault.DefaultRoot(Environment.GetEnvironmentVariable("RAM_PORTABLE_DIR") ?? AppContext.BaseDirectory);
-            return AppBuilder.Configure<ManagerApp>().UsePlatformDetect().StartWithClassicDesktopLifetime([]);
+            return AppBuilder.Configure<ManagerApp>().UsePlatformDetect()
+                .With(new X11PlatformOptions { RenderingMode = [X11RenderingMode.Software] })
+                .StartWithClassicDesktopLifetime([]);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex is ArgumentException ? "The data directory path is invalid." :
                 "The manager could not start. Run it from an X11 or XWayland desktop with the dependencies in the Linux instructions.");
+            Console.Error.WriteLine($"Startup error: {ex.GetType().Name}");
             return 1;
         }
     }
