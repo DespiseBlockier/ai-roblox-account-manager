@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -28,6 +29,16 @@ internal static class Program
         }
         try
         {
+            if (OperatingSystem.IsLinux())
+            {
+                // The .NET 10 crypto shim cannot use the OpenSSL 4 ABI.
+                if (!NativeLibrary.TryLoad("libssl.so.3", out var ssl))
+                {
+                    Console.Error.WriteLine("OpenSSL 3 is required. On Arch Linux with OpenSSL 4, install the openssl-3 compatibility package.");
+                    return 1;
+                }
+                NativeLibrary.Free(ssl);
+            }
             DataRoot = args.Length == 2 ? Path.GetFullPath(args[1]) :
                 Vault.DefaultRoot(Environment.GetEnvironmentVariable("RAM_PORTABLE_DIR") ?? AppContext.BaseDirectory);
             return AppBuilder.Configure<ManagerApp>().UsePlatformDetect()

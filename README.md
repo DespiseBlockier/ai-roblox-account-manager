@@ -12,7 +12,7 @@ Unofficial third-party software, unaffiliated with Roblox Corporation or the ref
 
 ## Linux preview
 
-The x86-64 portable build targets Arch Linux, CachyOS and openSUSE. Extract the `linux-x64.tar.gz` and run `./RobloxAccountManager` from its folder. Use an X11 or XWayland desktop. Install Chromium through your distro's package manager for browser sign-in and browsing.
+The x86-64 portable build targets Arch Linux, CachyOS and openSUSE. Extract the `*-linux-x64.tar.gz` archive and run `./RobloxAccountManager` from its folder. Use an X11 or XWayland desktop. The app requires OpenSSL 3. On Arch Linux with OpenSSL 4, install the `openssl-3` compatibility package. Install Chromium through your distro's package manager for browser sign-in and browsing.
 
 The preview supports the portable vault, authenticator 2FA, account and cookie import, saved login, bulk editing, notes, status checks, game bookmarks, and per-account game access results for multiple selected accounts. To move a Windows portable vault, close both apps and copy `Data/accounts.vault` to the Linux build's `Data` folder. Use the same master password and authenticator. Convert legacy Windows-bound vaults on their original PC before moving them.
 

@@ -66,6 +66,9 @@ jobs:
           if [[ $DISTRO == arch ]]; then
             pacman -Syu --noconfirm --needed libx11 libice libsm libxcursor libxrandr libxext libxi libxrender libxfixes \
               fontconfig ttf-dejavu icu openssl xorg-server-xvfb xdotool tar gzip
+            if [[ ! -r /usr/lib/libssl.so.3 ]]; then
+              pacman -S --noconfirm --needed openssl-3
+            fi
           else
             zypper --non-interactive install --no-recommends libX11-6 libICE6 libSM6 libXcursor1 libXrandr2 libXext6 \
               libXi6 libXrender1 libXfixes3 fontconfig dejavu-fonts libicu-devel libopenssl3 libz1 \

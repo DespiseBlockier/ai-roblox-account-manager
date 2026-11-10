@@ -6,7 +6,11 @@ RobloxAccountManager folder and run:
     ./RobloxAccountManager
 
 The .NET runtime is included. The app uses X11 or XWayland, plus normal
-desktop libraries including X11, ICE/SM, fontconfig, ICU, OpenSSL and zlib.
+desktop libraries including X11, ICE/SM, fontconfig, ICU, OpenSSL 3 and zlib.
+On Arch Linux with OpenSSL 4, install the openssl-3 compatibility package:
+
+    sudo pacman -S openssl-3
+
 Install your distribution's Chromium package to use browser sign-in and
 account browsing. An alternative installed Chromium executable can be set
 with the RAM_CHROMIUM_PATH environment variable.
