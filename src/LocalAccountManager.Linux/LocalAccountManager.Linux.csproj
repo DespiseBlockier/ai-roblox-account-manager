@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+    <PlaywrightPlatform>linux-x64</PlaywrightPlatform>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>RobloxAccountManager</AssemblyName>
+    <RootNamespace>LocalAccountManager.Linux</RootNamespace>
+    <Version>1.17.2-linux.1</Version>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NuGetAudit>true</NuGetAudit>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.62.0" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
+    <Compile Include="../LocalAccountManager/AccountChecks.cs;../LocalAccountManager/AgeGroups.cs;../LocalAccountManager/Authenticator.cs;../LocalAccountManager/BrowserAccountStore.cs;../LocalAccountManager/BrowserSignup.cs;../LocalAccountManager/BrowserSolvers.cs;../LocalAccountManager/BulkEditing.cs;../LocalAccountManager/Dpapi.cs;../LocalAccountManager/GameAccess.cs;../LocalAccountManager/GmailModels.cs;../LocalAccountManager/GoogleOAuth.cs;../LocalAccountManager/GroupTarget.cs;../LocalAccountManager/LoginWorkflow.cs;../LocalAccountManager/Models.cs;../LocalAccountManager/Moderation.cs;../LocalAccountManager/RobloxApi.cs;../LocalAccountManager/RobuxBalances.cs;../LocalAccountManager/Security.cs;../LocalAccountManager/Vault.cs;../LocalAccountManager/Vault.Authentication.cs" Link="Shared/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

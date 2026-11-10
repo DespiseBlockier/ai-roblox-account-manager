@@ -29,6 +29,7 @@ public sealed partial class Vault : IDisposable
     public static string DefaultRoot(string applicationFolder) => Path.GetFullPath(Path.Combine(applicationFolder, "Data"));
     private static readonly Lazy<string> DeviceKey = new(() =>
     {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Windows browser profiles are only available on Windows.");
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName + "|" + identity.User?.Value)))[..24];
     });
@@ -170,6 +171,7 @@ public sealed partial class Vault : IDisposable
 
     public static AppState ReadLegacyWindows(string file)
     {
+        if (!OperatingSystem.IsWindows()) throw new UserError("Convert this older vault on its original Windows PC first.");
         byte[] clear = Dpapi.Unprotect(ReadBounded(file), Entropy);
         try { return Deserialize(clear); } finally { CryptographicOperations.ZeroMemory(clear); }
     }
@@ -292,13 +294,25 @@ public sealed partial class Vault : IDisposable
     private static void WriteAtomic(string file, byte[] bytes, string? previous = null)
     {
         file = Path.GetFullPath(file);
-        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        if (OperatingSystem.IsLinux()) Directory.CreateDirectory(Path.GetDirectoryName(file)!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        else Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         string temp = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+            if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            using (var stream = new FileStream(temp, options))
             { stream.Write(bytes); stream.Flush(true); }
-            if (File.Exists(file) && previous is not null) File.Copy(file, previous, true);
+            if (File.Exists(file) && previous is not null)
+            {
+                if (OperatingSystem.IsLinux())
+                {
+                    var old = ReadBounded(file);
+                    try { WriteAtomic(previous, old); }
+                    finally { CryptographicOperations.ZeroMemory(old); }
+                }
+                else File.Copy(file, previous, true);
+            }
             File.Move(temp, file, true);
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }

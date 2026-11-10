@@ -1,6 +1,6 @@
 # Copyright, licensing, and attribution
 
-AI Roblox Account Manager is an unofficial third-party Windows application. It is not affiliated with, endorsed by, or sponsored by Roblox Corporation or the original Roblox Account Manager author. Roblox and associated marks belong to their respective owners. The app uses its own account-card icon, not the Roblox logo.
+AI Roblox Account Manager is an unofficial third-party desktop application. It is not affiliated with, endorsed by, or sponsored by Roblox Corporation or the original Roblox Account Manager author. Roblox and associated marks belong to their respective owners. The app uses its own account-card icon, not the Roblox logo.
 
 ## Application license
 
@@ -20,6 +20,9 @@ Ban monitoring uses a new local implementation of Roblox's moderation endpoint a
 - **Microsoft.Web.WebView2 SDK:** distributed under Microsoft's included BSD-style license and notices, retained under `Docs/ThirdPartyNotices`. The installed WebView2 browser runtime is a separate Microsoft component with its own terms.
 - **QRCoder 1.8.1:** offline QR generation, MIT license. Copyright (c) 2013–2025 Raffael Herrmann and 2024–2025 Shane Krueger. The supplied license is retained as `Docs/ThirdPartyNotices/QRCoder-LICENSE.txt`.
 - **AvalonEdit 6.3.1.120:** JavaScript editor and syntax highlighting, MIT license. Copyright (c) AvalonEdit Contributors. License retained as `Docs/ThirdPartyNotices/AvalonEdit-LICENSE.txt`.
+- **Avalonia, Avalonia DataGrid, MicroCom and Tmds.DBus:** Linux desktop UI and desktop integration, MIT licenses. The Linux archive includes their license texts under `Docs/ThirdPartyNotices`.
+- **SkiaSharp and HarfBuzzSharp:** rendering and font shaping for the Linux preview. Their license texts and native third-party notices are included under `Docs/ThirdPartyNotices`.
+- **Microsoft Playwright and its bundled Node.js:** isolated Chromium sessions on Linux. Their licenses and notices are retained under `app/.playwright`. Chromium is installed separately by the user.
 - **Pillow:** optional development tool for regenerating the project's original icon; it is not bundled into the application.
 
 The application GPL license does not replace third-party component licenses or grant rights to Roblox trademarks. Source, attribution, and license review reduce avoidable problems but do not constitute a legal clearance or a promise that no takedown request can be made.

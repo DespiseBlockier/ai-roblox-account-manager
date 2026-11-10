@@ -1,0 +1,110 @@
+name: Linux preview build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/LocalAccountManager.Linux/**'
+      - 'src/LocalAccountManager/*.cs'
+      - 'scripts/Build-Linux.py'
+      - 'scripts/Linux-Readme.txt'
+      - 'third-party/*'
+      - '.github/workflows/linux-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: python3 scripts/Build-Linux.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: releases/*-linux-x64.tar.gz*
+          compression-level: 0
+          if-no-files-found: error
+
+  startup:
+    name: Start on ${{ matrix.name }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Arch Linux
+            image: archlinux:base
+            distro: arch
+          - name: CachyOS
+            image: cachyos/cachyos:latest
+            distro: arch
+          - name: openSUSE Tumbleweed
+            image: opensuse/tumbleweed:latest
+            distro: suse
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-x64
+          path: release
+      - name: Create and reopen an empty encrypted vault in Xvfb
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+          DISTRO: ${{ matrix.distro }}
+        run: |
+          set -euo pipefail
+          docker run --rm -i --env DISTRO -v "$PWD/release:/release:ro" "$IMAGE" /bin/bash -se <<'CONTAINER'
+          set -euo pipefail
+          if [[ $DISTRO == arch ]]; then
+            pacman -Syu --noconfirm --needed libx11 libice libsm libxcursor libxrandr libxext libxi libxrender libxfixes \
+              libglvnd fontconfig ttf-dejavu icu openssl zlib xorg-server-xvfb xdotool tar gzip
+          else
+            zypper --non-interactive install --no-recommends libX11-6 libICE6 libSM6 libXcursor1 libXrandr2 libXext6 \
+              libXi6 libXrender1 libXfixes3 libGL1 fontconfig dejavu-fonts libicu-devel libopenssl3 zlib \
+              xorg-x11-server-Xvfb xdotool tar gzip
+          fi
+          cd "$(mktemp -d)"
+          cp /release/* .
+          sha256sum -c ./*.sha256
+          tar -xzf ./*.tar.gz
+          cd RobloxAccountManager
+          ./RobloxAccountManager --version
+          app/.playwright/node/linux-x64/node --version
+          export DISPLAY=:41
+          Xvfb "$DISPLAY" -screen 0 1280x900x24 -nolisten tcp -ac >xvfb.log 2>&1 &
+          xserver=$!
+          manager=
+          trap 'cat xvfb.log manager.log 2>/dev/null || true; kill "$xserver" ${manager:+"$manager"} 2>/dev/null || true' EXIT
+          timeout 15s bash -c 'until xdotool getdisplaygeometry >/dev/null 2>&1; do sleep 0.2; done'
+          start() {
+            ./RobloxAccountManager > manager.log 2>&1 &
+            manager=$!
+          }
+          wait_for_window() {
+            timeout 25s xdotool search --sync --onlyvisible --name "$1" | sed -n '1p'
+          }
+          start
+          unlock=$(wait_for_window '^Create your portable vault$')
+          xdotool windowfocus "$unlock" type 'Smoke-Test-Only-2026'
+          xdotool key Tab
+          xdotool type 'Smoke-Test-Only-2026'
+          xdotool key Return
+          wait_for_window '^Roblox Account Manager' >/dev/null
+          test "$(stat -c %a Data/accounts.vault)" = 600
+          test "$(stat -c %a Data)" = 700
+          kill "$manager"
+          wait "$manager" || true
+          start
+          unlock=$(wait_for_window '^Unlock your portable vault$')
+          xdotool windowfocus "$unlock" type 'Smoke-Test-Only-2026'
+          xdotool key Return
+          wait_for_window '^Roblox Account Manager' >/dev/null
+          CONTAINER

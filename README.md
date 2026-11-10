@@ -10,6 +10,16 @@ A native Windows account manager with the familiar account-list and join-server 
 
 Unofficial third-party software, unaffiliated with Roblox Corporation or the reference project's author. This distribution uses **GPL-3.0-only** and includes corresponding source with releases. See [NOTICE.md](NOTICE.md) for attribution and third-party licensing, and [LICENSE](LICENSE) for the license terms. The app icon is original artwork for this project.
 
+## Linux preview
+
+The x86-64 portable build targets Arch Linux, CachyOS and openSUSE. Extract the `linux-x64.tar.gz` and run `./RobloxAccountManager` from its folder. Use an X11 or XWayland desktop. Install Chromium through your distro's package manager for browser sign-in and browsing.
+
+The preview supports the portable vault, authenticator 2FA, account and cookie import, saved login, bulk editing, notes, status checks, game bookmarks, and per-account game access results for multiple selected accounts. To move a Windows portable vault, close both apps and copy `Data/accounts.vault` to the Linux build's `Data` folder. Use the same master password and authenticator. Convert legacy Windows-bound vaults on their original PC before moving them.
+
+The Windows Roblox player launcher, browser scripting, Gmail automation and in-app updater are Windows-only in this preview. Follow the prompts in Chromium for Roblox verification.
+
+Build with Python 3.11+ and the .NET 10 SDK using `python3 scripts/Build-Linux.py`. The script writes a clean archive and SHA-256 file to `releases/`.
+
 ## Start
 
 Close any older manager window, then double-click **Start.cmd**, or open **dist/v1.17.2/RobloxAccountManager.exe**. For the shareable build, extract `releases/RobloxAccountManager-1.17.2-win-x64.zip` and open `RobloxAccountManager.exe` inside its `RobloxAccountManager` folder. Keep the entire folder together.
