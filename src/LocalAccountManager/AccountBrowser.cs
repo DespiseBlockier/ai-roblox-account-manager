@@ -8,7 +8,8 @@ using System.Windows.Threading;
 namespace LocalAccountManager;
 
 public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity,
-    Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
+    Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null,
+    Action<string>? launchPlayer = null)
 {
     private readonly Dictionary<Guid, AccountBrowser> browsers = [];
     private Task<CoreWebView2Environment>? environment;
@@ -42,7 +43,7 @@ public sealed class BrowserHub(Vault vault, RobloxApi api, Func<Account, RobloxI
             if (visible) { current.ShowForUser(); if (navigate) current.Navigate(url); }
             return current;
         }
-        var browser = new AccountBrowser(account, env, api, onIdentity, guest, onAddAccount, gmail);
+        var browser = new AccountBrowser(account, env, api, onIdentity, guest, onAddAccount, gmail, launchPlayer);
         browser.AccountAdded += saved => { if (guest) CloseAccount(saved); };
         browser.WarningDetected += warned => WarningDetected?.Invoke(warned);
         browsers.Add(account.Id, browser);
@@ -223,15 +224,18 @@ public sealed partial class AccountBrowser : Window
     public bool ShownForUser { get; private set; }
     public bool IsGuest { get; }
     private readonly Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount;
+    private readonly Action<string> launchPlayer;
     public event Action<Account>? AccountAdded;
 
     public AccountBrowser(Account account, CoreWebView2Environment environment, RobloxApi api, Func<Account, RobloxIdentity, string, bool, Task> onIdentity, bool guest = false,
-        Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null)
+        Func<RobloxIdentity, string, string?, string?, CancellationToken, Task<Account>>? onAddAccount = null, GmailService? gmail = null,
+        Action<string>? launchPlayer = null)
     {
         Style = (Style)FindResource(typeof(Window));
         this.account = account; this.environment = environment; this.api = api; this.onIdentity = onIdentity;
         IsGuest = guest;
         this.onAddAccount = onAddAccount; this.gmail = gmail;
+        this.launchPlayer = launchPlayer ?? Security.LaunchRoblox;
         Title = "Roblox · " + account.Username + " · Account browser";
         if (guest) { Title = "Roblox · Guest browser"; status.Text = "Fresh private guest session. Sign-ins here are not automatically saved to your account list."; }
         Width = 1160; Height = 820; MinWidth = 800; MinHeight = 600;
@@ -298,7 +302,7 @@ public sealed partial class AccountBrowser : Window
             {
                 args.Cancel = true;
                 if (!Security.CanLaunchFromBrowser(args.Uri, args.InitiatingOrigin, core.Source)) return;
-                try { Security.LaunchRoblox(args.Uri); status.Text = "Launch request sent to the installed Roblox player."; }
+                try { launchPlayer(args.Uri); status.Text = "Launch request sent to the Roblox player."; }
                 catch (Exception ex) { status.Text = Security.Friendly(ex); }
             };
             core.SourceChanged += (_, _) => { if (signupWeb is null) address.Text = DisplayBrowserAddress(core.Source); };

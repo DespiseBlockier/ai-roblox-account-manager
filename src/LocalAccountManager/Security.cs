@@ -68,7 +68,9 @@ public static class Security
             Regex.IsMatch(uri.AbsolutePath, @"^/v1/users/[1-9][0-9]*/items/Asset/[1-9][0-9]*/is-owned$", RegexOptions.CultureInvariant));
 
     public static bool CanLaunchFromBrowser(string uri, string origin, string topLevel) =>
-        IsBrowserPage(origin) && IsBrowserPage(topLevel) && uri.Length <= 20000 && !uri.Any(char.IsControl) &&
+        IsBrowserPage(origin) && IsBrowserPage(topLevel) && IsPlayerLaunchUri(uri);
+
+    internal static bool IsPlayerLaunchUri(string uri) => uri.Length <= 20000 && !uri.Any(char.IsControl) &&
         uri.StartsWith("roblox-player:", StringComparison.OrdinalIgnoreCase);
 
     public static string BuildLaunchUri(long placeId, string job, string ticket)
@@ -86,7 +88,7 @@ public static class Security
 
     public static void LaunchRoblox(string uri)
     {
-        if (uri.Length > 20000 || uri.Any(char.IsControl) || !uri.StartsWith("roblox-player:", StringComparison.OrdinalIgnoreCase))
+        if (!IsPlayerLaunchUri(uri))
             throw new UserError("Blocked an invalid Roblox launch request.");
         try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); }
         catch { throw new UserError("Windows could not open Roblox. Install Roblox from roblox.com, then try again."); }

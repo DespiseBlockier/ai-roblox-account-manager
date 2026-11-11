@@ -61,6 +61,8 @@
             <TextBlock Text="Server Job ID · optional" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,12,0,6"/>
             <TextBox x:Name="JobInput" AutomationProperties.Name="Server Job ID" MaxLength="40"/>
             <Button Content="▶   Join server" Style="{StaticResource Primary}" Click="Join_Click" Margin="0,16,0,8" Padding="12,11"/>
+            <Button x:Name="LivePlayerButton" Content="Install temporary Roblox LIVE" Click="InstallLivePlayer_Click" Margin="0,0,0,8"
+                    ToolTip="Use the LIVE Windows player for this session. Closing the manager closes its temporary Roblox windows and removes the install."/>
             <Button x:Name="CheckGameAccessButton" Content="Check game access" Click="CheckGameAccess_Click" Margin="0,0,0,8" ToolTip="Check this experience for the selected accounts."/>
             <UniformGrid Columns="2"><Button Content="Open browser" Click="Browser_Click"/><Button x:Name="CheckStatusButton" Content="Check status" Click="Check_Click" Margin="0" ToolTip="Check the selected accounts' sessions, ban status, age groups, and Robux balances."/></UniformGrid>
             <Button Content="Sign in · use saved login" Click="SignIn_Click" Margin="0,8,0,0" ToolTip="Fills the saved username and password and presses Log In once. Complete any verification on Roblox."/>
@@ -95,6 +97,6 @@
         </TabItem>
       </TabControl>
     </Grid>
-    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock Text="v1.9.0  ·  Portable" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
+    <DockPanel Grid.Row="3" Margin="0,16,0,0"><TextBlock x:Name="AppVersion" Foreground="#68758A" FontSize="11" DockPanel.Dock="Right"/><TextBlock x:Name="Status" Text="Ready. Add an account to begin." Foreground="{StaticResource Muted}" TextWrapping="Wrap" MaxWidth="990" HorizontalAlignment="Left" FontSize="12"/></DockPanel>
   </Grid>
 </Window>

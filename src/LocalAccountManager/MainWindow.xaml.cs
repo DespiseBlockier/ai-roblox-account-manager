@@ -13,6 +13,9 @@ public partial class MainWindow : Window
     private readonly BrowserHub browsers;
     private readonly GmailService gmail;
     private readonly AccountEnrollment enrollment;
+    private readonly TemporaryLivePlayer livePlayer = new();
+    private CancellationTokenSource? liveInstallCancel;
+    private bool closeAfterLiveInstall;
     private readonly LoginQueue loginQueue = new();
     private readonly DispatcherTimer sessionTimer = new() { Interval = TimeSpan.FromMinutes(5) };
     private readonly DispatcherTimer moderationClock = new() { Interval = TimeSpan.FromMinutes(1) };
@@ -37,9 +40,10 @@ public partial class MainWindow : Window
         if (removed > 0) vault.Save(state);
         enrollment = new AccountEnrollment(state, () => vault.Save(state));
         gmail = new GmailService(state, () => vault.Save(state));
-        browsers = new BrowserHub(vault, this.api, Connected, AddBrowserAccount, gmail);
+        browsers = new BrowserHub(vault, this.api, Connected, AddBrowserAccount, gmail, LaunchPlayer);
         browsers.WarningDetected += BrowserWarningDetected;
         InitializeComponent();
+        AppVersion.Text = $"v{UpdateTrust.CurrentVersion}  ·  Portable";
         Refresh();
         UpdateProtectionLabel();
         InitializeUpdateChecks();
@@ -53,11 +57,21 @@ public partial class MainWindow : Window
         }
         Closing += (_, e) =>
         {
+            if (liveInstallCancel is { } install)
+            {
+                e.Cancel = true;
+                closeAfterLiveInstall = true;
+                install.Cancel();
+                return;
+            }
             if (busy) { e.Cancel = true; Status.Text = "Wait for the current operation to finish before closing."; }
             else
             {
                 try { SavePendingNotes(); }
                 catch (Exception ex) { e.Cancel = true; Status.Text = "Notes could not be saved. " + Security.Friendly(ex); }
+                if (e.Cancel) return;
+                try { livePlayer.Remove(); }
+                catch (Exception ex) { e.Cancel = true; Status.Text = "Temporary Roblox cleanup failed. " + Security.Friendly(ex); }
             }
         };
         Closed += (_, _) => { closing = true; updateCancel.Cancel(); updates.Dispose(); updateCancel.Dispose(); sessionTimer.Stop(); moderationClock.Stop(); automaticUpdateTimer.Stop(); if (codeWindow is { WasClosed: false }) codeWindow.Close(); browsers.CloseAll(); gmail.Dispose(); DisableMulti(); this.api.Dispose(); };
@@ -368,6 +382,51 @@ public partial class MainWindow : Window
         finally { checkingSessions = false; }
     }
 
+    private async void InstallLivePlayer_Click(object sender, RoutedEventArgs e)
+    {
+        if (liveInstallCancel is { } activeInstall)
+        {
+            activeInstall.Cancel();
+            return;
+        }
+        await Run(async () =>
+        {
+            using var cancel = new CancellationTokenSource();
+            liveInstallCancel = cancel;
+            LivePlayerButton.Content = "Cancel LIVE install";
+            Status.Text = "Checking the current Roblox LIVE player…";
+            try
+            {
+                var progress = new Progress<string>(message =>
+                {
+                    if (ReferenceEquals(liveInstallCancel, cancel)) Status.Text = message;
+                });
+                string version = await livePlayer.Install(progress, cancel.Token);
+                LivePlayerButton.Content = "Temporary Roblox LIVE ready";
+                LivePlayerButton.IsEnabled = false;
+                Status.Text = $"Roblox LIVE ({version}) is ready for server joins.";
+            }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested)
+            {
+                Status.Text = "Roblox LIVE install canceled.";
+            }
+            finally
+            {
+                liveInstallCancel = null;
+                if (LivePlayerButton.IsEnabled) LivePlayerButton.Content = "Install temporary Roblox LIVE";
+            }
+        });
+        if (!closeAfterLiveInstall) return;
+        closeAfterLiveInstall = false;
+        Close();
+    }
+
+    private void LaunchPlayer(string uri)
+    {
+        if (liveInstallCancel is not null) throw new UserError("Wait for the Roblox LIVE install to finish.");
+        livePlayer.Launch(uri);
+    }
+
     private async void Join_Click(object sender, RoutedEventArgs e) => await Run(async () =>
     {
         var accounts = SelectedMany();
@@ -386,7 +445,7 @@ public partial class MainWindow : Window
             else
             {
                 string ticket = await api.Ticket(cookie);
-                Security.LaunchRoblox(Security.BuildLaunchUri(target.PlaceId!.Value, job, ticket));
+                LaunchPlayer(Security.BuildLaunchUri(target.PlaceId!.Value, job, ticket));
                 a.LastUsed = DateTimeOffset.UtcNow;
                 Status.Text = "Launch request sent for @" + a.Username + ".";
             }
